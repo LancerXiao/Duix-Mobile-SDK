@@ -2,6 +2,7 @@ package ai.guiji.duix.test.service
 
 import android.util.Log
 import okhttp3.*
+import okio.ByteString
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -129,7 +130,7 @@ class AsrService {
 
     fun sendAudio(data: ByteArray) {
         if (isRunning) {
-            webSocket?.send(data)
+            webSocket?.send(ByteString.of(*data))
         }
     }
 

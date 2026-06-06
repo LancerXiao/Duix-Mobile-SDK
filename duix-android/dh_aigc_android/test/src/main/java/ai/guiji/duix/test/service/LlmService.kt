@@ -69,7 +69,7 @@ class LlmService {
 
         val fullText = StringBuilder()
 
-        client.newCall(request).enqueue(object : Callback {
+        client.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: Call, e: java.io.IOException) {
                 callback.onError(e.message ?: "Network error")
             }
@@ -121,7 +121,7 @@ class LlmService {
     }
 
     fun clearHistory() {
-        messages.clear()
+        for (i in messages.length() - 1 downTo 0) { messages.remove(i) }
         val systemMsg = JSONObject()
         systemMsg.put("role", "system")
         systemMsg.put("content", "你是一个友好的AI数字人助手。请用简洁、自然的口语化方式回答问题，每次回复控制在2-3句话以内。不要使用markdown格式。")

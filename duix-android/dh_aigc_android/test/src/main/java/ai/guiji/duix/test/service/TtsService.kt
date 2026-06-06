@@ -68,7 +68,7 @@ class TtsService {
             .post(body)
             .build()
 
-        client.newCall(request).enqueue(object : Callback {
+        client.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: Call, e: java.io.IOException) {
                 callback.onError(e.message ?: "Network error")
             }

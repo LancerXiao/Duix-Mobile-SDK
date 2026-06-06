@@ -72,7 +72,7 @@ class Mp3ToPcmConverter(private val context: Context) {
                 TARGET_SAMPLE_RATE,
                 TARGET_CHANNELS
             )
-            outputFormat.setInteger(MediaFormat.KEY_PCM_ENCODING, MediaFormat.ENCODING_PCM_16BIT)
+            outputFormat.setInteger(MediaFormat.KEY_PCM_ENCODING, android.media.AudioFormat.ENCODING_PCM_16BIT)
 
             val decoder = MediaCodec.createDecoderByType(mime)
             decoder.configure(inputFormat, null, null, 0)
