@@ -3,17 +3,14 @@ name: Build & Deploy APK
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 jobs:
   build-and-deploy:
-    name: Build & Deploy
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -21,27 +18,26 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Set up Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Decode keystore
+        working-directory: duix-android/dh_aigc_android
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > duix-android/dh_aigc_android/demo.jks
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > demo.jks
 
       - name: Configure local.properties
         working-directory: duix-android/dh_aigc_android
         run: |
-          cat > local.properties << EOF
-          sdk.dir=${ANDROID_HOME}
-          duix.keystore.file=../demo.jks
-          duix.keystore.password=${{ secrets.KEYSTORE_PASSWORD }}
-          duix.keystore.alias=demo
-          duix.keystore.alias.password=${{ secrets.KEY_ALIAS_PASSWORD }}
-          EOF
+          echo "sdk.dir=${ANDROID_HOME}" > local.properties
+          echo "duix.keystore.file=demo.jks" >> local.properties
+          echo "duix.keystore.password=${{ secrets.KEYSTORE_PASSWORD }}" >> local.properties
+          echo "duix.keystore.alias=demo" >> local.properties
+          echo "duix.keystore.alias.password=${{ secrets.KEY_ALIAS_PASSWORD }}" >> local.properties
 
-      - name: Grant execute permission
+      - name: Grant execute permission for gradlew
         working-directory: duix-android/dh_aigc_android
-        run: chmod +x gradlew || true
+        run: chmod +x gradlew
 
       - name: Build Release APK
         working-directory: duix-android/dh_aigc_android
@@ -55,91 +51,42 @@ jobs:
           VERSION_CODE=$(grep "versionCode" test/build.gradle | head -1 | sed 's/.*versionCode *\([0-9]*\).*/\1/')
           echo "name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          APK_FILE=$(find test/build/outputs/apk/release -name '*.apk' | head -1)
+          echo "apk=$APK_FILE" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
 
-      - name: Find APK
-        id: apk
-        working-directory: duix-android/dh_aigc_android
-        run: |
-          APK_PATH=$(find test/build/outputs/apk/release -name "*.apk" | head -1)
-          if [ -z "$APK_PATH" ]; then
-            echo "::error::Release APK not found!"
-            exit 1
-          fi
-          echo "path=$APK_PATH" >> $GITHUB_OUTPUT
-          APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-          echo "APK: $APK_PATH ($APK_SIZE)"
-
       - name: Generate version.json
-        env:
-          VERSION_NAME: ${{ steps.version.outputs.name }}
-          VERSION_CODE: ${{ steps.version.outputs.code }}
         run: |
-          DOWNLOAD_URL="https://www.enlyai.com/downloads/duix/duix_digital_human.apk"
-          cat > /tmp/version.json << EOF
+          cat > version.json << EOF
           {
-            "version_code": $VERSION_CODE,
-            "version_name": "$VERSION_NAME",
-            "download_url": "$DOWNLOAD_URL",
+            "version_code": ${{ steps.version.outputs.code }},
+            "version_name": "${{ steps.version.outputs.name }}",
+            "download_url": "https://www.enlyai.com/downloads/duix/duix_digital_human.apk",
             "update_message": "DUIX Digital Human 新版本可用，点击下载更新",
             "force_update": false,
             "releaseDate": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF
-          cat /tmp/version.json
 
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.ECS_SSH_KEY }}" > ~/.ssh/ecs_key
-          chmod 600 ~/.ssh/ecs_key
-          ssh-keyscan -p ${{ secrets.ECS_PORT || 22 }} ${{ secrets.ECS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "${{ secrets.ECS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${{ secrets.ECS_PORT }} ${{ secrets.ECS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Deploy to ECS
-        env:
-          ECS_HOST: ${{ secrets.ECS_HOST }}
-          ECS_USER: ${{ secrets.ECS_USER || 'root' }}
-          ECS_PORT: ${{ secrets.ECS_PORT || 22 }}
         run: |
-          # Create download directory on ECS
-          ssh -i ~/.ssh/ecs_key -p $ECS_PORT $ECS_USER@$ECS_HOST \
-            "mkdir -p /var/www/enlyai.com/downloads/duix"
-
-          # Upload APK (overwrite with fixed name for consistent download URL)
-          scp -i ~/.ssh/ecs_key -P $ECS_PORT \
-            "${{ steps.apk.outputs.path }}" \
-            $ECS_USER@$ECS_HOST:/var/www/enlyai.com/downloads/duix/duix_digital_human.apk
-
-          # Upload version.json
-          scp -i ~/.ssh/ecs_key -P $ECS_PORT \
-            /tmp/version.json \
-            $ECS_USER@$ECS_HOST:/var/www/enlyai.com/downloads/duix/version.json
-
-          # Upload download page
-          scp -i ~/.ssh/ecs_key -P $ECS_PORT \
-            deploy/download-page.html \
-            $ECS_USER@$ECS_HOST:/var/www/enlyai.com/downloads/duix/index.html
-
-          echo "Deployed to: https://www.enlyai.com/downloads/duix/duix_digital_human.apk"
-
-      - name: Verify deployment
-        env:
-          ECS_HOST: ${{ secrets.ECS_HOST }}
-        run: |
-          sleep 3
-          HTTP_CODE=$(curl -sI "https://www.enlyai.com/downloads/duix/version.json" 2>/dev/null | head -1 || echo "N/A")
-          echo "version.json check: $HTTP_CODE"
+          DEPLOY_DIR="/var/www/enlyai.com/downloads/duix"
+          ssh -i ~/.ssh/deploy_key -p ${{ secrets.ECS_PORT }} ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }} "mkdir -p $DEPLOY_DIR"
+          scp -i ~/.ssh/deploy_key -P ${{ secrets.ECS_PORT }} ${{ steps.version.outputs.apk }} ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:$DEPLOY_DIR/duix_digital_human.apk
+          scp -i ~/.ssh/deploy_key -P ${{ secrets.ECS_PORT }} version.json ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:$DEPLOY_DIR/version.json
+          scp -i ~/.ssh/deploy_key -P ${{ secrets.ECS_PORT }} deploy/download-page.html ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:$DEPLOY_DIR/index.html
+          echo "Deployed to: https://www.enlyai.com/downloads/duix/"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: duix-release-apk
-          path: ${{ steps.apk.outputs.path }}
+          path: ${{ steps.version.outputs.apk }}
           retention-days: 30
-
-      - name: Create GitHub Release (on tag)
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ steps.apk.outputs.path }}
-          generate_release_notes: true
