@@ -412,15 +412,14 @@ class CallActivity : BaseActivity() {
                         }
 
                         override fun onComplete() {
-                            // PCM 全部推送完毕
+                            // PCM 全部推送完毕，stopPush会触发BNF处理
+                            // 音频播放由RenderThread自动管理：
+                            //   - BNF数据就绪时自动调用audioPlayer.startPlay() → CALLBACK_EVENT_AUDIO_PLAY_START
+                            //   - 播放完成时触发CALLBACK_EVENT_AUDIO_PLAY_END
+                            // 所以这里不要设置IDLE状态，让AUDIO_PLAY_END回调来处理
                             currentDuix.stopPush()
                             runOnUiThread {
-                                if (currentState == State.SPEAKING) {
-                                    currentState = State.IDLE
-                                }
-                                updateStatus("就绪 - 按住麦克风说话")
-                                updateUI()
-                                scheduleAutoListen()
+                                updateStatus("数字人播放中...")
                             }
                         }
 
