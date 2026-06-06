@@ -59,8 +59,11 @@ jobs:
           echo "name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "code=$VERSION_CODE" >> $GITHUB_OUTPUT
           APK_FILE=$(find test/build/outputs/apk/release -name '*.apk' | head -1)
-          echo "apk=$APK_FILE" >> $GITHUB_OUTPUT
+          # Convert to absolute path from repo root
+          APK_ABS="$GITHUB_WORKSPACE/duix-android/dh_aigc_android/$APK_FILE"
+          echo "apk=$APK_ABS" >> $GITHUB_OUTPUT
           echo "Version: $VERSION_NAME ($VERSION_CODE)"
+          echo "APK: $APK_ABS"
 
       - name: Generate version.json
         run: |
