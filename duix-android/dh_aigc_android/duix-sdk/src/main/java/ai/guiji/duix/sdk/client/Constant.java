@@ -16,6 +16,6 @@ public class Constant {
     public static final String CALLBACK_EVENT_MOTION_END = "motion.end";
 
 
-    public static final String BASE_DOWNLOAD_URL = "https://github.com/GuijiAI/duix.ai/releases/download/v1.0.0/gj_dh_res.zip"; // 基础配置文件包
+    public static final String BASE_DOWNLOAD_URL = "http://114.215.183.45/downloads/duix/models/gj_dh_res.zip"; // 基础配置文件包
 
 }

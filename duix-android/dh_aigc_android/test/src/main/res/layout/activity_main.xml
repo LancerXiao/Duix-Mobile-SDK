@@ -59,7 +59,7 @@
                 android:layout_marginTop="12dp"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
-                android:text="https://github.com/duixcom/Duix-Mobile/releases/download/v1.0.0/gj_dh_res.zip"
+                android:text="http://114.215.183.45/downloads/duix/models/gj_dh_res.zip"
                 android:textSize="13sp"
                 app:layout_constraintTop_toBottomOf="@+id/tvBaseConfig"
                 />
@@ -88,7 +88,7 @@
                 android:id="@+id/etUrl"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
-                android:text="https://github.com/duixcom/Duix-Mobile/releases/download/v1.0.0/bendi3_20240518.zip"
+                android:text="http://114.215.183.45/downloads/duix/models/bendi3_20240518.zip"
                 android:textSize="13sp"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="@+id/btnMoreModel"
