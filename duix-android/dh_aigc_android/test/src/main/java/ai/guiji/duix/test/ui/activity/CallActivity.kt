@@ -6,15 +6,13 @@ import ai.guiji.duix.sdk.client.loader.ModelInfo
 import ai.guiji.duix.sdk.client.render.DUIXRenderer
 import ai.guiji.duix.test.R
 import ai.guiji.duix.test.databinding.ActivityCallBinding
-import ai.guiji.duix.test.service.AsrService
-import ai.guiji.duix.test.service.AudioRecorder
+import ai.guiji.duix.test.service.AndroidAsrService
+import ai.guiji.duix.test.service.AndroidTtsService
 import ai.guiji.duix.test.service.LlmService
-import ai.guiji.duix.test.service.TtsService
 import android.Manifest
 import android.annotation.SuppressLint
 import android.opengl.GLSurfaceView
 import android.os.Bundle
-import android.text.TextUtils
 import android.util.Log
 import android.view.MotionEvent
 import android.view.View
@@ -37,9 +35,8 @@ class CallActivity : BaseActivity() {
 
     // AI服务
     private val llmService = LlmService()
-    private val asrService = AsrService()
-    private val ttsService = TtsService()
-    private val audioRecorder = AudioRecorder()
+    private lateinit var asrService: AndroidAsrService
+    private lateinit var ttsService: AndroidTtsService
 
     // 状态管理
     private var isDuiXReady = false
@@ -55,6 +52,13 @@ class CallActivity : BaseActivity() {
 
         modelUrl = intent.getStringExtra("modelUrl") ?: ""
         debug = intent.getBooleanExtra("debug", false)
+
+        // 初始化ASR和TTS
+        asrService = AndroidAsrService(mContext)
+        asrService.create()
+
+        ttsService = AndroidTtsService(mContext)
+        ttsService.init()
 
         Glide.with(mContext).load("file:///android_asset/bg/bg1.png").into(binding.ivBg)
 
@@ -176,10 +180,10 @@ class CallActivity : BaseActivity() {
         // 停止当前播放
         stopSpeaking()
 
-        // 启动ASR
-        asrService.start(object : AsrService.Callback {
+        // 使用Android原生SpeechRecognizer
+        asrService.startListening(object : AndroidAsrService.Callback {
             override fun onReady() {
-                runOnUiThread { updateStatus("Listening... (ASR ready)") }
+                runOnUiThread { updateStatus("Listening... (speak now)") }
             }
 
             override fun onPartialResult(text: String) {
@@ -188,9 +192,13 @@ class CallActivity : BaseActivity() {
 
             override fun onFinalResult(text: String) {
                 runOnUiThread {
+                    isRecording = false
                     if (text.isNotEmpty()) {
                         updateStatus("Recognized: $text")
                         sendToLlm(text)
+                    } else {
+                        updateStatus("No speech detected")
+                        updateUI()
                     }
                 }
             }
@@ -202,33 +210,13 @@ class CallActivity : BaseActivity() {
                     updateUI()
                 }
             }
-
-            override fun onClosed() {
-                isRecording = false
-                updateUI()
-            }
-        })
-
-        // 启动录音，将PCM数据发送给ASR
-        audioRecorder.start(object : AudioRecorder.Callback {
-            override fun onPcmData(data: ByteArray) {
-                asrService.sendAudio(data)
-            }
-
-            override fun onError(error: String) {
-                runOnUiThread {
-                    updateStatus("Record Error: $error")
-                    stopListening()
-                }
-            }
         })
     }
 
     private fun stopListening() {
         if (!isRecording) return
         isRecording = false
-        audioRecorder.stop()
-        asrService.stop()
+        asrService.stopListening()
         updateUI()
     }
 
@@ -271,18 +259,23 @@ class CallActivity : BaseActivity() {
     }
 
     private fun synthesizeAndPlay(text: String) {
-        updateStatus("Synthesizing speech...")
+        updateStatus("Speaking...")
         isSpeaking = true
         updateUI()
 
-        ttsService.synthesize(text, object : TtsService.Callback {
+        // 使用Android原生TTS驱动数字人
+        val currentDuix = duix ?: run {
+            isSpeaking = false
+            updateUI()
+            return
+        }
+
+        ttsService.synthesizeAndDrive(currentDuix, text, object : AndroidTtsService.Callback {
             override fun onPcmData(data: ByteArray) {
-                // 将TTS生成的PCM数据推送给数字人
-                duix?.pushPcm(data)
+                // Android TTS通过speak()直接播放，PCM数据由系统处理
             }
 
             override fun onComplete() {
-                duix?.stopPush()
                 isSpeaking = false
                 runOnUiThread {
                     updateStatus("Ready - Press and hold to talk")
@@ -291,7 +284,6 @@ class CallActivity : BaseActivity() {
             }
 
             override fun onError(error: String) {
-                duix?.stopPush()
                 isSpeaking = false
                 runOnUiThread {
                     updateStatus("TTS Error: $error")
@@ -299,12 +291,10 @@ class CallActivity : BaseActivity() {
                 }
             }
         })
-
-        // 开始推送音频
-        duix?.startPush()
     }
 
     private fun stopSpeaking() {
+        ttsService.stop()
         duix?.stopAudio()
         isSpeaking = false
         updateUI()
@@ -316,13 +306,6 @@ class CallActivity : BaseActivity() {
     }
 
     private fun updateUI() {
-        val state = when {
-            isRecording -> "recording"
-            isProcessing -> "processing"
-            isSpeaking -> "speaking"
-            else -> "idle"
-        }
-
         binding.btnTalk.isEnabled = isDuiXReady && !isProcessing && !isSpeaking
         binding.btnTalk.text = when {
             isRecording -> "Listening..."
@@ -331,14 +314,13 @@ class CallActivity : BaseActivity() {
             else -> "Hold to Talk"
         }
 
-        // 更新录音指示器
         binding.ivRecordingIndicator.visibility = if (isRecording) View.VISIBLE else View.GONE
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        audioRecorder.stop()
-        asrService.close()
+        asrService.destroy()
+        ttsService.destroy()
         duix?.release()
     }
 }
