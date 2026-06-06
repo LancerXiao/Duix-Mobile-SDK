@@ -72,7 +72,7 @@ class Mp3ToPcmConverter(private val context: Context) {
             // 获取输入音频的采样率和通道数
             val inputSampleRate = inputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE, 44100)
             val inputChannels = inputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT, 1)
-            Log.d(TAG, "Input audio: ${inputSampleRate}Hz, ${inputChannels}ch")
+            Log.i(TAG, "Input audio: ${inputSampleRate}Hz, ${inputChannels}ch")
 
             val decoder = MediaCodec.createDecoderByType(mime)
             decoder.configure(inputFormat, null, null, 0)

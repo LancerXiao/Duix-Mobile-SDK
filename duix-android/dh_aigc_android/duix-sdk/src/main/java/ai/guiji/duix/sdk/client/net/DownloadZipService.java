@@ -33,7 +33,7 @@ public class DownloadZipService {
             // Check if model is already fully extracted (tmp tag exists)
             File tmpTag = new File(targetDirFile.getParentFile(), "tmp/" + targetDirFile.getName());
             if (tmpTag.exists() && targetDirFile.exists()) {
-                Logger.d("Model already downloaded and extracted, skip download.");
+                Logger.i("Model already downloaded and extracted, skip download.");
                 callback.onComplete(targetDirFile);
                 return;
             }
@@ -45,11 +45,11 @@ public class DownloadZipService {
             File zipFile = new File(cacheDir, MD5Util.string2MD5(url));
             boolean result = true;
             if (!zipFile.exists()) {
-                Logger.d("zip not found, try download.");
+                Logger.i("zip not found, try download.");
                 result = new FileDownloader(url, zipFile.getAbsolutePath(), callback::onDownloadProgress).download();
-                Logger.d("download file done.");
+                Logger.i("download file done.");
             } else {
-                Logger.d( "found cache zip file.");
+                Logger.i( "found cache zip file.");
             }
             if (result) {
                 Logger.e( "try unzip file.");
@@ -64,7 +64,7 @@ public class DownloadZipService {
                 }
                 result = ZipUtil.unzip(zipFile.getAbsolutePath(), targetParentDir.getAbsolutePath(), callback::onUnzipProgress);
                 if (result) {
-                    Logger.d( "unzip file complete.");
+                    Logger.i( "unzip file complete.");
                     // 这里时候targetDirFile应该是存在的
                     if (targetDirFile.exists()) {
                         File tmpDir = new File(targetParentDir, "tmp/" + targetDirFile.getName());

@@ -164,7 +164,7 @@ class CallActivity : BaseActivity() {
         duix = DUIX(mContext, modelUrl, mDUIXRender) { event, msg, info ->
             when (event) {
                 Constant.CALLBACK_EVENT_INIT_READY -> {
-                    Log.d(TAG, "DUIX 初始化成功!")
+                    Log.i(TAG, "DUIX 初始化成功!")
                     mModelInfo = info as ModelInfo
                     isDuiXReady = true
                     initOk()
@@ -211,14 +211,14 @@ class CallActivity : BaseActivity() {
                 }
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_START -> {
                     runOnUiThread {
-                        Log.d(TAG, "AUDIO_PLAY_START: 数字人开始播放音频")
+                        Log.i(TAG, "AUDIO_PLAY_START: 数字人开始播放音频")
                         currentState = State.SPEAKING
                         updateUI()
                     }
                 }
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_END -> {
                     runOnUiThread {
-                        Log.d(TAG, "AUDIO_PLAY_END: 数字人播放完成")
+                        Log.i(TAG, "AUDIO_PLAY_END: 数字人播放完成")
                         currentState = State.IDLE
                         updateUI()
                         // 自动回到监听状态
@@ -404,12 +404,12 @@ class CallActivity : BaseActivity() {
         // 使用 Edge TTS 合成 MP3 音频
         edgeTtsService.synthesize(text, EdgeTtsService.VOICE_XIAOXIAO, object : EdgeTtsService.Callback {
             override fun onAudioData(mp3Data: ByteArray) {
-                Log.d(TAG, "Edge TTS 返回音频数据: ${mp3Data.size} bytes")
+                Log.i(TAG, "Edge TTS 返回音频数据: ${mp3Data.size} bytes")
                 // Edge TTS 返回完整 MP3 数据，转换为 PCM 推送给数字人
                 // MP3转PCM是耗时操作，放在后台线程执行
                 Thread {
                     // 开始推送会话
-                    Log.d(TAG, "调用 startPush()")
+                    Log.i(TAG, "调用 startPush()")
                     currentDuix.startPush()
                     var totalPcmBytes = 0L
                     var pcmChunkCount = 0
@@ -427,7 +427,7 @@ class CallActivity : BaseActivity() {
                             //   - BNF数据就绪时自动调用audioPlayer.startPlay() → CALLBACK_EVENT_AUDIO_PLAY_START
                             //   - 播放完成时触发CALLBACK_EVENT_AUDIO_PLAY_END
                             // 所以这里不要设置IDLE状态，让AUDIO_PLAY_END回调来处理
-                            Log.d(TAG, "PCM转换完成: $pcmChunkCount chunks, $totalPcmBytes bytes, 调用 stopPush()")
+                            Log.i(TAG, "PCM转换完成: $pcmChunkCount chunks, $totalPcmBytes bytes, 调用 stopPush()")
                             currentDuix.stopPush()
                             runOnUiThread {
                                 updateStatus("数字人播放中...")
@@ -453,7 +453,7 @@ class CallActivity : BaseActivity() {
 
             override fun onComplete() {
                 // Edge TTS 合成完成（音频数据已在 onAudioData 中处理）
-                Log.d(TAG, "Edge TTS 合成完成")
+                Log.i(TAG, "Edge TTS 合成完成")
             }
 
             override fun onError(error: String) {

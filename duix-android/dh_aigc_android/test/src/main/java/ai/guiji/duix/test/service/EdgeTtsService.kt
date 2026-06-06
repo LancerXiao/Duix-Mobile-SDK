@@ -93,7 +93,7 @@ class EdgeTtsService {
                 webSocket?.close(1000, "Timeout")
                 isSynthesizing = false
                 if (retryCount < MAX_RETRIES) {
-                    Log.d(TAG, "Retrying synthesis (attempt ${retryCount + 1}/$MAX_RETRIES)")
+                    Log.i(TAG, "Retrying synthesis (attempt ${retryCount + 1}/$MAX_RETRIES)")
                     android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                         synthesizeWithRetry(text, voice, callback, retryCount + 1)
                     }, RETRY_DELAY_MS)
@@ -106,7 +106,7 @@ class EdgeTtsService {
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.d(TAG, "Edge TTS WebSocket connected")
+                Log.i(TAG, "Edge TTS WebSocket connected")
 
                 // 1. 发送配置消息
                 val configMessage = "X-Timestamp:${Date()}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"true\"},\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}"
@@ -128,9 +128,9 @@ class EdgeTtsService {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 // 解析WebSocket文本消息（元数据）
                 if (text.contains("Path:turn.start")) {
-                    Log.d(TAG, "Synthesis started")
+                    Log.i(TAG, "Synthesis started")
                 } else if (text.contains("Path:turn.end")) {
-                    Log.d(TAG, "Synthesis completed, total chunks: ${audioChunks.size}")
+                    Log.i(TAG, "Synthesis completed, total chunks: ${audioChunks.size}")
                     isSynthesizing = false
                     cancelTimeout()
                     // 合并所有音频数据
@@ -169,7 +169,7 @@ class EdgeTtsService {
                 cancelTimeout()
 
                 if (retryCount < MAX_RETRIES) {
-                    Log.d(TAG, "Retrying synthesis (attempt ${retryCount + 1}/$MAX_RETRIES)")
+                    Log.i(TAG, "Retrying synthesis (attempt ${retryCount + 1}/$MAX_RETRIES)")
                     android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                         synthesizeWithRetry(text, voice, callback, retryCount + 1)
                     }, RETRY_DELAY_MS)
@@ -185,7 +185,7 @@ class EdgeTtsService {
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.d(TAG, "Edge TTS WebSocket closed")
+                Log.i(TAG, "Edge TTS WebSocket closed")
                 isSynthesizing = false
                 cancelTimeout()
             }

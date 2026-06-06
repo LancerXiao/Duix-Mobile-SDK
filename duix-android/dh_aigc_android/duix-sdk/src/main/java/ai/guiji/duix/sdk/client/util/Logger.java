@@ -40,7 +40,7 @@ public class Logger {
 
     public static void d(String tag, String text) {
         if (logFlag) {
-            Log.d(TAG, tag + "~" + text);
+            Log.i(TAG, tag + "~" + text);
         }
     }
 

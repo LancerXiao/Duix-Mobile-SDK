@@ -72,12 +72,12 @@ class AndroidAsrService(private val context: android.content.Context) {
 
         speechRecognizer?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
-                Log.d(TAG, "Ready for speech")
+                Log.i(TAG, "Ready for speech")
                 callback.onReady()
             }
 
             override fun onBeginningOfSpeech() {
-                Log.d(TAG, "Beginning of speech")
+                Log.i(TAG, "Beginning of speech")
             }
 
             override fun onRmsChanged(rmsdB: Float) {}
@@ -85,7 +85,7 @@ class AndroidAsrService(private val context: android.content.Context) {
             override fun onBufferReceived(buffer: ByteArray?) {}
 
             override fun onEndOfSpeech() {
-                Log.d(TAG, "End of speech")
+                Log.i(TAG, "End of speech")
                 isListening = false
             }
 
@@ -108,7 +108,7 @@ class AndroidAsrService(private val context: android.content.Context) {
                 // 对于可恢复的错误，自动重启
                 if (shouldAutoRestart(error) && restartAttempts < MAX_RESTART_ATTEMPTS) {
                     restartAttempts++
-                    Log.d(TAG, "Auto-restarting listener (attempt $restartAttempts/$MAX_RESTART_ATTEMPTS)")
+                    Log.i(TAG, "Auto-restarting listener (attempt $restartAttempts/$MAX_RESTART_ATTEMPTS)")
                     tryRestartListening(callback)
                 } else {
                     callback.onError(errorMsg)

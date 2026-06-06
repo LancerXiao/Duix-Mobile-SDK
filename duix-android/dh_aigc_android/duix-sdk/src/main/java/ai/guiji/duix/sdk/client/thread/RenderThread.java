@@ -126,14 +126,14 @@ public class RenderThread extends Thread {
                 }
                 scrfdncnn.initWenet(info.getWenetfn());
                 mModelInfo = info;
-                Logger.d("分辨率: " + mModelInfo.getWidth() + "x" + mModelInfo.getHeight());
+                Logger.i("分辨率: " + mModelInfo.getWidth() + "x" + mModelInfo.getHeight());
                 rawBuffer = ByteBuffer.allocate(mModelInfo.getWidth() * mModelInfo.getHeight() * 3);
                 maskBuffer = ByteBuffer.allocate(mModelInfo.getWidth() * mModelInfo.getHeight() * 3);
                 if (!mModelInfo.isHasMask()) {
                     // 用纯白填充mask
                     Arrays.fill(maskBuffer.array(), (byte) 255);
                 }
-                Logger.d("模型初始化完成");
+                Logger.i("模型初始化完成");
                 if (callback != null) {
                     callback.onInitResult(0, 0, mModelInfo.toString(), mModelInfo);
                 }
@@ -158,7 +158,7 @@ public class RenderThread extends Thread {
             // 线程最后释放NCNN
             scrfdncnn.free(0);
         }
-        Logger.d("NCNN释放");
+        Logger.i("NCNN释放");
         if (audioPlayer != null) {
             audioPlayer.release();
             audioPlayer = null;
@@ -255,7 +255,7 @@ public class RenderThread extends Thread {
             requireMotion = false;
             if (prepareActionRegion != null){
                 mPreviewQueue.clear();
-                Logger.d("发现想要播放的动作区间region: " + prepareActionRegion);
+                Logger.i("发现想要播放的动作区间region: " + prepareActionRegion);
                 mPreviewQueue.addAll(prepareActionRegion.frames);
             }
         }
@@ -366,7 +366,7 @@ public class RenderThread extends Thread {
                 prepareActionRegion = matchRegion;
                 requireMotion = true;
             } else {
-                Logger.d("在播放队列最后插入动作区间region: " + matchRegion);
+                Logger.i("在播放队列最后插入动作区间region: " + matchRegion);
                 mPreviewQueue.addAll(matchRegion.frames);
             }
         }
@@ -380,7 +380,7 @@ public class RenderThread extends Thread {
                 requireMotion = true;
                 prepareActionRegion = region;
             } else {
-                Logger.d("在播放队列最后插入随机动作区间region: " + region);
+                Logger.i("在播放队列最后插入随机动作区间region: " + region);
                 mPreviewQueue.addAll(region.frames);
             }
         }

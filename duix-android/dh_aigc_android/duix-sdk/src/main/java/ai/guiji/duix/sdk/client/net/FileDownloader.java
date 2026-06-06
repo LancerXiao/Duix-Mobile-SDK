@@ -63,7 +63,7 @@ public class FileDownloader {
                 }
             }
         } catch (Exception e){
-            Logger.d("download error:" + e);
+            Logger.i("download error:" + e);
         }
         return false;
     }
