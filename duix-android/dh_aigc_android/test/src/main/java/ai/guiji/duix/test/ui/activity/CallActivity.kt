@@ -4,26 +4,22 @@ import ai.guiji.duix.sdk.client.Constant
 import ai.guiji.duix.sdk.client.DUIX
 import ai.guiji.duix.sdk.client.loader.ModelInfo
 import ai.guiji.duix.sdk.client.render.DUIXRenderer
-import ai.guiji.duix.sdk.client.thread.RenderThread
 import ai.guiji.duix.test.R
 import ai.guiji.duix.test.databinding.ActivityCallBinding
-import ai.guiji.duix.test.ui.adapter.MotionAdapter
-import ai.guiji.duix.test.ui.dialog.AudioRecordDialog
-import ai.guiji.duix.test.util.StringUtils
+import ai.guiji.duix.test.service.AsrService
+import ai.guiji.duix.test.service.AudioRecorder
+import ai.guiji.duix.test.service.LlmService
+import ai.guiji.duix.test.service.TtsService
 import android.Manifest
 import android.annotation.SuppressLint
 import android.opengl.GLSurfaceView
 import android.os.Bundle
 import android.text.TextUtils
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
-import android.widget.CompoundButton
 import android.widget.Toast
 import com.bumptech.glide.Glide
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
-
 
 class CallActivity : BaseActivity() {
 
@@ -33,34 +29,27 @@ class CallActivity : BaseActivity() {
 
     private var modelUrl = ""
     private var debug = false
-    private var mMessage = ""
-
-    @SuppressLint("SetTextI18n")
-    private fun applyMessage(msg: String){
-        if (debug){
-            runOnUiThread {
-                binding.tvDebug.visibility = View.VISIBLE
-                if (mMessage.length > 10000){
-                    mMessage = ""
-                }
-                mMessage = "${StringUtils.dateToStringMS4()} $msg\n$mMessage"
-                binding.tvDebug.text = mMessage
-            }
-        }
-
-    }
 
     private lateinit var binding: ActivityCallBinding
     private var duix: DUIX? = null
     private var mDUIXRender: DUIXRenderer? = null
-    private var mModelInfo: ModelInfo?=null     // 加载的模型信息
+    private var mModelInfo: ModelInfo? = null
+
+    // AI服务
+    private val llmService = LlmService()
+    private val asrService = AsrService()
+    private val ttsService = TtsService()
+    private val audioRecorder = AudioRecorder()
+
+    // 状态管理
+    private var isDuiXReady = false
+    private var isRecording = false
+    private var isSpeaking = false
+    private var isProcessing = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         keepScreenOn()
-//        val audioManager = mContext.getSystemService(AUDIO_SERVICE) as AudioManager
-//        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-//        audioManager.isSpeakerphoneOn = true
         binding = ActivityCallBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -71,217 +60,285 @@ class CallActivity : BaseActivity() {
 
         binding.glTextureView.setEGLContextClientVersion(GL_CONTEXT_VERSION)
         binding.glTextureView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
-//        binding.glTextureView.preserveEGLContextOnPause = true
         binding.glTextureView.isOpaque = false
 
-        binding.switchMute.setOnCheckedChangeListener(object : CompoundButton.OnCheckedChangeListener {
-            override fun onCheckedChanged(
-                buttonView: CompoundButton?,
-                isChecked: Boolean,
-            ) {
-                if (isChecked) {
-                    duix?.setVolume(0.0F)
-                } else {
-                    duix?.setVolume(1.0F)
-                }
+        // 静音开关
+        binding.switchMute.setOnCheckedChangeListener { _, isChecked ->
+            duix?.setVolume(if (isChecked) 0.0F else 1.0F)
+        }
+
+        // 长按说话按钮
+        binding.btnTalk.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> startListening()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> stopListening()
             }
-        })
-
-        binding.btnRecord.setOnClickListener {
-            requestPermission(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+            true
         }
 
-        binding.btnPlayPCM.setOnClickListener {
-            applyMessage("start play pcm")
-            playPCMStream()
+        // 文本输入发送
+        binding.btnSend.setOnClickListener {
+            val text = binding.etInput.text.toString().trim()
+            if (text.isNotEmpty()) {
+                binding.etInput.text.clear()
+                sendToLlm(text)
+            }
         }
 
-        binding.btnPlayWAV.setOnClickListener {
-            applyMessage("start play wav")
-            playWAVFile()
+        // 停止播放
+        binding.btnStopPlay.setOnClickListener {
+            stopSpeaking()
         }
 
+        // 随机动作
         binding.btnRandomMotion.setOnClickListener {
-            applyMessage("start random motion")
             duix?.startRandomMotion(true)
         }
-        binding.btnStopPlay.setOnClickListener {
-            duix?.stopAudio()
-        }
 
-        mDUIXRender =
-            DUIXRenderer(
-                mContext,
-                binding.glTextureView
-            )
+        // 初始化渲染器
+        mDUIXRender = DUIXRenderer(mContext, binding.glTextureView)
         binding.glTextureView.setRenderer(mDUIXRender)
-        binding.glTextureView.renderMode =
-            GLSurfaceView.RENDERMODE_WHEN_DIRTY      // 一定要在设置完Render之后再调用
+        binding.glTextureView.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
 
+        // 初始化DUIX
         duix = DUIX(mContext, modelUrl, mDUIXRender) { event, msg, info ->
             when (event) {
                 Constant.CALLBACK_EVENT_INIT_READY -> {
                     mModelInfo = info as ModelInfo
-                    Log.i(TAG, "CALLBACK_EVENT_INIT_READY: $mModelInfo")
+                    isDuiXReady = true
                     initOk()
                 }
-
                 Constant.CALLBACK_EVENT_INIT_ERROR -> {
                     runOnUiThread {
-                        applyMessage("init error: $msg")
                         Log.e(TAG, "CALLBACK_EVENT_INIT_ERROR: $msg")
-                        Toast.makeText(mContext, "Initialization exception: $msg", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(mContext, "Init error: $msg", Toast.LENGTH_SHORT).show()
                     }
                 }
-
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_START -> {
-                    applyMessage("callback audio play start")
-                    Log.i(TAG, "CALLBACK_EVENT_AUDIO_PLAY_START")
+                    isSpeaking = true
+                    updateUI()
                 }
-
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_END -> {
-                    applyMessage("callback audio play end")
-                    Log.i(TAG, "CALLBACK_EVENT_PLAY_END")
+                    isSpeaking = false
+                    updateUI()
                 }
-
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_ERROR -> {
-                    applyMessage("callback audio play error: $msg")
-                    Log.e(TAG, "CALLBACK_EVENT_PLAY_ERROR: $msg")
+                    isSpeaking = false
+                    updateUI()
                 }
-
-                Constant.CALLBACK_EVENT_MOTION_START -> {
-                    applyMessage("callback motion play start")
-                    Log.e(TAG, "CALLBACK_EVENT_MOTION_START")
-                }
-
-                Constant.CALLBACK_EVENT_MOTION_END -> {
-                    applyMessage("callback motion play end")
-                    Log.e(TAG, "CALLBACK_EVENT_MOTION_END")
-                }
+                Constant.CALLBACK_EVENT_MOTION_START -> {}
+                Constant.CALLBACK_EVENT_MOTION_END -> {}
             }
         }
-        // Rendering status callback
-//        duix?.setReporter(object : RenderThread.Reporter {
-//            override fun onRenderStat(
-//                resultCode: Int,
-//                isLip: Boolean,
-//                useTime: Long,
-//            ) {
-//
-//            }
-//        })
-        applyMessage("start init")
         duix?.init()
     }
 
     private fun initOk() {
-        Log.i(TAG, "init ok")
-        applyMessage("init ok")
         runOnUiThread {
-            binding.btnRecord.isEnabled = true
-            binding.btnPlayPCM.isEnabled = true
-            binding.btnPlayWAV.isEnabled = true
+            binding.btnTalk.isEnabled = true
+            binding.btnSend.isEnabled = true
+            binding.etInput.isEnabled = true
             binding.switchMute.isEnabled = true
             binding.btnStopPlay.isEnabled = true
+            updateStatus("Ready - Press and hold to talk")
+            updateUI()
 
             mModelInfo?.let { modelInfo ->
                 if (modelInfo.motionRegions.isNotEmpty()) {
-                    val names = ArrayList<String>()
-                    for (motion in modelInfo.motionRegions){
-                        if (!TextUtils.isEmpty(motion.name) && "unknown" != motion.name){
-                            names.add(motion.name)
-                        }
-                    }
-                    // Named action regions
-                    if (names.isNotEmpty()){
-                        val motionAdapter = MotionAdapter(names, object : MotionAdapter.Callback{
-                            override fun onClick(name: String, now: Boolean) {
-                                applyMessage("start [${name}] motion")
-                                duix?.startMotion(name, now)
-                            }
-                        })
-                        binding.rvMotion.adapter = motionAdapter
-                    }
                     binding.btnRandomMotion.visibility = View.VISIBLE
-                    binding.tvMotionTips.visibility = View.VISIBLE
                 }
             }
         }
     }
 
+    private fun startListening() {
+        if (!isDuiXReady || isProcessing || isSpeaking) return
 
-    override fun onDestroy() {
-        super.onDestroy()
-        duix?.release()
-    }
-
-    private fun playPCMStream(){
-        val thread = Thread {
-            duix?.startPush()
-            val inputStream = assets.open("pcm/2.pcm")
-            val buffer = ByteArray(320)
-            var length = 0
-            while (inputStream.read(buffer).also { length = it } > 0){
-                val data = buffer.copyOfRange(0, length)
-                duix?.pushPcm(data)
-            }
-            duix?.stopPush()
-            inputStream.close()
-        }
-        thread.start()
-    }
-
-    private fun playWAVFile(){
-        val thread = Thread {
-            val wavName = "1.wav"
-            val wavFile = File(mContext.externalCacheDir, wavName)
-            if (!wavFile.exists()){
-                // copy assets -> sd card
-                val inputStream = assets.open("wav/$wavName")
-                if (!mContext.externalCacheDir!!.exists()){
-                    mContext.externalCacheDir!!.mkdirs()
-                }
-                val out = FileOutputStream(wavFile)
-                val buffer = ByteArray(1024)
-                var length = 0
-                while ((inputStream.read(buffer).also { length = it }) > 0) {
-                    out.write(buffer, 0, length)
-                }
-                out.close()
-                inputStream.close()
-            }
-            duix?.playAudio(wavFile.absolutePath)
-        }
-        thread.start()
+        requestPermission(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
     }
 
     override fun permissionsGet(get: Boolean, code: Int) {
         super.permissionsGet(get, code)
-        if (get){
-            showRecordDialog()
+        if (get && code == 1) {
+            doStartListening()
         } else {
             Toast.makeText(mContext, R.string.need_permission_continue, Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun showRecordDialog(){
-        val audioRecordDialog = AudioRecordDialog(mContext, object : AudioRecordDialog.Listener{
-            override fun onFinish(path: String) {
-                val thread = Thread {
-                    duix?.startPush()
-                    val inputStream = FileInputStream(path)
-                    val buffer = ByteArray(320)
-                    var length = 0
-                    while (inputStream.read(buffer).also { length = it } > 0){
-                        val data = buffer.copyOfRange(0, length)
-                        duix?.pushPcm(data)
+    @SuppressLint("SetTextI18n")
+    private fun doStartListening() {
+        if (isRecording) return
+        isRecording = true
+        updateStatus("Listening...")
+        updateUI()
+
+        // 停止当前播放
+        stopSpeaking()
+
+        // 启动ASR
+        asrService.start(object : AsrService.Callback {
+            override fun onReady() {
+                runOnUiThread { updateStatus("Listening... (ASR ready)") }
+            }
+
+            override fun onPartialResult(text: String) {
+                runOnUiThread { updateStatus("Hearing: $text") }
+            }
+
+            override fun onFinalResult(text: String) {
+                runOnUiThread {
+                    if (text.isNotEmpty()) {
+                        updateStatus("Recognized: $text")
+                        sendToLlm(text)
                     }
-                    duix?.stopPush()
-                    inputStream.close()
                 }
-                thread.start()
+            }
+
+            override fun onError(error: String) {
+                runOnUiThread {
+                    updateStatus("ASR Error: $error")
+                    isRecording = false
+                    updateUI()
+                }
+            }
+
+            override fun onClosed() {
+                isRecording = false
+                updateUI()
             }
         })
-        audioRecordDialog.show()
+
+        // 启动录音，将PCM数据发送给ASR
+        audioRecorder.start(object : AudioRecorder.Callback {
+            override fun onPcmData(data: ByteArray) {
+                asrService.sendAudio(data)
+            }
+
+            override fun onError(error: String) {
+                runOnUiThread {
+                    updateStatus("Record Error: $error")
+                    stopListening()
+                }
+            }
+        })
+    }
+
+    private fun stopListening() {
+        if (!isRecording) return
+        isRecording = false
+        audioRecorder.stop()
+        asrService.stop()
+        updateUI()
+    }
+
+    private fun sendToLlm(text: String) {
+        if (isProcessing) return
+        isProcessing = true
+        updateStatus("Thinking...")
+        updateUI()
+
+        val fullResponse = StringBuilder()
+
+        llmService.chat(text, object : LlmService.Callback {
+            override fun onToken(token: String) {
+                fullResponse.append(token)
+                runOnUiThread {
+                    updateStatus("AI: ${fullResponse}")
+                }
+            }
+
+            override fun onComplete(fullText: String) {
+                runOnUiThread {
+                    updateStatus("AI: $fullText")
+                    isProcessing = false
+                    if (fullText.isNotEmpty()) {
+                        synthesizeAndPlay(fullText)
+                    } else {
+                        updateUI()
+                    }
+                }
+            }
+
+            override fun onError(error: String) {
+                runOnUiThread {
+                    updateStatus("LLM Error: $error")
+                    isProcessing = false
+                    updateUI()
+                }
+            }
+        })
+    }
+
+    private fun synthesizeAndPlay(text: String) {
+        updateStatus("Synthesizing speech...")
+        isSpeaking = true
+        updateUI()
+
+        ttsService.synthesize(text, object : TtsService.Callback {
+            override fun onPcmData(data: ByteArray) {
+                // 将TTS生成的PCM数据推送给数字人
+                duix?.pushPcm(data)
+            }
+
+            override fun onComplete() {
+                duix?.stopPush()
+                isSpeaking = false
+                runOnUiThread {
+                    updateStatus("Ready - Press and hold to talk")
+                    updateUI()
+                }
+            }
+
+            override fun onError(error: String) {
+                duix?.stopPush()
+                isSpeaking = false
+                runOnUiThread {
+                    updateStatus("TTS Error: $error")
+                    updateUI()
+                }
+            }
+        })
+
+        // 开始推送音频
+        duix?.startPush()
+    }
+
+    private fun stopSpeaking() {
+        duix?.stopAudio()
+        isSpeaking = false
+        updateUI()
+    }
+
+    @SuppressLint("SetTextI18n")
+    private fun updateStatus(text: String) {
+        binding.tvStatus.text = text
+    }
+
+    private fun updateUI() {
+        val state = when {
+            isRecording -> "recording"
+            isProcessing -> "processing"
+            isSpeaking -> "speaking"
+            else -> "idle"
+        }
+
+        binding.btnTalk.isEnabled = isDuiXReady && !isProcessing && !isSpeaking
+        binding.btnTalk.text = when {
+            isRecording -> "Listening..."
+            isProcessing -> "Thinking..."
+            isSpeaking -> "Speaking..."
+            else -> "Hold to Talk"
+        }
+
+        // 更新录音指示器
+        binding.ivRecordingIndicator.visibility = if (isRecording) View.VISIBLE else View.GONE
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        audioRecorder.stop()
+        asrService.close()
+        duix?.release()
     }
 }
