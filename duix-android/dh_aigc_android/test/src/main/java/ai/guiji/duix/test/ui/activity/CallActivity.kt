@@ -367,38 +367,44 @@ class CallActivity : BaseActivity() {
         edgeTtsService.synthesize(text, EdgeTtsService.VOICE_XIAOXIAO, object : EdgeTtsService.Callback {
             override fun onAudioData(mp3Data: ByteArray) {
                 // Edge TTS 返回完整 MP3 数据，转换为 PCM 推送给数字人
-                mp3ToPcmConverter.convert(mp3Data, object : Mp3ToPcmConverter.Callback {
-                    override fun onPcmData(pcmData: ByteArray) {
-                        // 推送 PCM 数据给 DUIX 数字人驱动口型
-                        currentDuix.startPush()
-                        currentDuix.pushPcm(pcmData)
-                        currentDuix.stopPush()
-                    }
-
-                    override fun onComplete() {
-                        runOnUiThread {
-                            if (currentState == State.SPEAKING) {
-                                currentState = State.IDLE
-                            }
-                            updateStatus("就绪 - 按住麦克风说话")
-                            updateUI()
-                            scheduleAutoListen()
+                // MP3转PCM是耗时操作，放在后台线程执行
+                Thread {
+                    // 开始推送会话
+                    currentDuix.startPush()
+                    mp3ToPcmConverter.convert(mp3Data, object : Mp3ToPcmConverter.Callback {
+                        override fun onPcmData(pcmData: ByteArray) {
+                            // 推送 PCM 数据给 DUIX 数字人驱动口型
+                            currentDuix.pushPcm(pcmData)
                         }
-                    }
 
-                    override fun onError(error: String) {
-                        Log.e(TAG, "MP3 to PCM conversion error: $error")
-                        runOnUiThread {
-                            // TTS转换失败，但文本已显示，仍然回到IDLE
-                            if (currentState == State.SPEAKING) {
-                                currentState = State.IDLE
+                        override fun onComplete() {
+                            // PCM 全部推送完毕
+                            currentDuix.stopPush()
+                            runOnUiThread {
+                                if (currentState == State.SPEAKING) {
+                                    currentState = State.IDLE
+                                }
+                                updateStatus("就绪 - 按住麦克风说话")
+                                updateUI()
+                                scheduleAutoListen()
                             }
-                            updateStatus("语音转换失败，文本已显示")
-                            updateUI()
-                            scheduleAutoListen()
                         }
-                    }
-                })
+
+                        override fun onError(error: String) {
+                            Log.e(TAG, "MP3 to PCM conversion error: $error")
+                            currentDuix.stopPush()
+                            runOnUiThread {
+                                // TTS转换失败，但文本已显示，仍然回到IDLE
+                                if (currentState == State.SPEAKING) {
+                                    currentState = State.IDLE
+                                }
+                                updateStatus("语音转换失败，文本已显示")
+                                updateUI()
+                                scheduleAutoListen()
+                            }
+                        }
+                    })
+                }.start()
             }
 
             override fun onComplete() {
