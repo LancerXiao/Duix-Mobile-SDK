@@ -7,8 +7,9 @@ import ai.guiji.duix.sdk.client.render.DUIXRenderer
 import ai.guiji.duix.test.R
 import ai.guiji.duix.test.databinding.ActivityCallBinding
 import ai.guiji.duix.test.service.AndroidAsrService
-import ai.guiji.duix.test.service.AndroidTtsService
+import ai.guiji.duix.test.service.EdgeTtsService
 import ai.guiji.duix.test.service.LlmService
+import ai.guiji.duix.test.service.Mp3ToPcmConverter
 import android.Manifest
 import android.annotation.SuppressLint
 import android.opengl.GLSurfaceView
@@ -36,7 +37,8 @@ class CallActivity : BaseActivity() {
     // AI服务
     private val llmService = LlmService()
     private lateinit var asrService: AndroidAsrService
-    private lateinit var ttsService: AndroidTtsService
+    private val edgeTtsService = EdgeTtsService()
+    private lateinit var mp3ToPcmConverter: Mp3ToPcmConverter
 
     // 状态管理
     private var isDuiXReady = false
@@ -53,12 +55,12 @@ class CallActivity : BaseActivity() {
         modelUrl = intent.getStringExtra("modelUrl") ?: ""
         debug = intent.getBooleanExtra("debug", false)
 
-        // 初始化ASR和TTS
+        // 初始化ASR
         asrService = AndroidAsrService(mContext)
         asrService.create()
 
-        ttsService = AndroidTtsService(mContext)
-        ttsService.init()
+        // 初始化MP3转PCM转换器
+        mp3ToPcmConverter = Mp3ToPcmConverter(mContext)
 
         Glide.with(mContext).load("file:///android_asset/bg/bg1.png").into(binding.ivBg)
 
@@ -258,29 +260,53 @@ class CallActivity : BaseActivity() {
         })
     }
 
+    /**
+     * 使用 Edge TTS 合成语音 -> MP3 转 PCM -> 推送给 DUIX 数字人
+     */
     private fun synthesizeAndPlay(text: String) {
-        updateStatus("Speaking...")
+        updateStatus("Synthesizing...")
         isSpeaking = true
         updateUI()
 
-        // 使用Android原生TTS驱动数字人
         val currentDuix = duix ?: run {
             isSpeaking = false
             updateUI()
             return
         }
 
-        ttsService.synthesizeAndDrive(currentDuix, text, object : AndroidTtsService.Callback {
-            override fun onPcmData(data: ByteArray) {
-                // Android TTS通过speak()直接播放，PCM数据由系统处理
+        // 使用 Edge TTS 合成 MP3 音频
+        edgeTtsService.synthesize(text, EdgeTtsService.VOICE_XIAOXIAO, object : EdgeTtsService.Callback {
+            override fun onAudioData(mp3Data: ByteArray) {
+                // Edge TTS 返回完整 MP3 数据，转换为 PCM 推送给数字人
+                mp3ToPcmConverter.convert(mp3Data, object : Mp3ToPcmConverter.Callback {
+                    override fun onPcmData(pcmData: ByteArray) {
+                        // 推送 PCM 数据给 DUIX 数字人驱动口型
+                        currentDuix.startPush()
+                        currentDuix.pushPcm(pcmData)
+                        currentDuix.stopPush()
+                    }
+
+                    override fun onComplete() {
+                        isSpeaking = false
+                        runOnUiThread {
+                            updateStatus("Ready - Press and hold to talk")
+                            updateUI()
+                        }
+                    }
+
+                    override fun onError(error: String) {
+                        Log.e(TAG, "MP3 to PCM conversion error: $error")
+                        isSpeaking = false
+                        runOnUiThread {
+                            updateStatus("TTS conversion error")
+                            updateUI()
+                        }
+                    }
+                })
             }
 
             override fun onComplete() {
-                isSpeaking = false
-                runOnUiThread {
-                    updateStatus("Ready - Press and hold to talk")
-                    updateUI()
-                }
+                // Edge TTS 合成完成（音频数据已在 onAudioData 中处理）
             }
 
             override fun onError(error: String) {
@@ -294,7 +320,7 @@ class CallActivity : BaseActivity() {
     }
 
     private fun stopSpeaking() {
-        ttsService.stop()
+        edgeTtsService.stop()
         duix?.stopAudio()
         isSpeaking = false
         updateUI()
@@ -320,7 +346,7 @@ class CallActivity : BaseActivity() {
     override fun onDestroy() {
         super.onDestroy()
         asrService.destroy()
-        ttsService.destroy()
+        edgeTtsService.stop()
         duix?.release()
     }
 }
