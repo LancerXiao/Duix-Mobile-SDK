@@ -1,0 +1,47 @@
+name: Diag ECS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    name: Diagnose ECS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.ECS_SSH_KEY }}" > ~/.ssh/ecs_key
+          chmod 600 ~/.ssh/ecs_key
+          ssh-keyscan -p ${{ secrets.ECS_SSH_PORT || 22 }} ${{ secrets.ECS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Run diagnostics
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USERNAME || 'root' }}
+          ECS_PORT: ${{ secrets.ECS_SSH_PORT || 22 }}
+        run: |
+          SSH="ssh -i ~/.ssh/ecs_key -p $ECS_PORT $ECS_USER@$ECS_HOST"
+
+          echo "=== 1. Nginx Status ==="
+          $SSH "systemctl status nginx --no-pager -l 2>/dev/null || service nginx status 2>/dev/null || echo 'Nginx not found'"
+
+          echo ""
+          echo "=== 2. Download Directory ==="
+          $SSH "ls -lah /var/www/html/download/duix/ 2>/dev/null || echo 'Directory not found'"
+
+          echo ""
+          echo "=== 3. APK Files ==="
+          $SSH "find /var/www/html/download/duix/ -name '*.apk' -exec ls -lh {} \;"
+
+          echo ""
+          echo "=== 4. Disk Space ==="
+          $SSH "df -h /"
+
+          echo ""
+          echo "=== 5. Download URL Test ==="
+          $SSH "curl -sI http://localhost/download/duix/DuixDigitalHuman-latest.apk | head -5"
+
+          echo ""
+          echo "=== 6. Nginx Config Test ==="
+          $SSH "nginx -t 2>&1"
