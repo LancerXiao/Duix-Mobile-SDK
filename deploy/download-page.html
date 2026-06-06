@@ -17,15 +17,8 @@
             justify-content: center;
             padding: 20px;
         }
-        .container {
-            max-width: 600px;
-            width: 100%;
-            text-align: center;
-        }
-        .logo {
-            font-size: 48px;
-            margin-bottom: 8px;
-        }
+        .container { max-width: 600px; width: 100%; text-align: center; }
+        .logo { font-size: 48px; margin-bottom: 8px; }
         h1 {
             font-size: 28px;
             background: linear-gradient(90deg, #60a5fa, #a78bfa);
@@ -33,11 +26,7 @@
             -webkit-text-fill-color: transparent;
             margin-bottom: 8px;
         }
-        .subtitle {
-            color: #888;
-            font-size: 14px;
-            margin-bottom: 32px;
-        }
+        .subtitle { color: #888; font-size: 14px; margin-bottom: 32px; }
         .download-card {
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.1);
@@ -62,20 +51,8 @@
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(59,130,246,0.4);
         }
-        .download-btn:active {
-            transform: translateY(0);
-        }
-        .info {
-            color: #888;
-            font-size: 13px;
-            line-height: 1.8;
-        }
-        .features {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-top: 24px;
-        }
+        .info { color: #888; font-size: 13px; line-height: 1.8; }
+        .features { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 24px; }
         .feature {
             background: rgba(255,255,255,0.03);
             border: 1px solid rgba(255,255,255,0.06);
@@ -83,29 +60,12 @@
             padding: 16px;
             text-align: left;
         }
-        .feature-icon {
-            font-size: 24px;
-            margin-bottom: 6px;
-        }
-        .feature-title {
-            font-size: 14px;
-            font-weight: 600;
-            color: #c0c0c0;
-        }
-        .feature-desc {
-            font-size: 12px;
-            color: #666;
-            margin-top: 4px;
-        }
-        .footer {
-            margin-top: 32px;
-            color: #444;
-            font-size: 12px;
-        }
-        .footer a {
-            color: #60a5fa;
-            text-decoration: none;
-        }
+        .feature-icon { font-size: 24px; margin-bottom: 6px; }
+        .feature-title { font-size: 14px; font-weight: 600; color: #c0c0c0; }
+        .feature-desc { font-size: 12px; color: #666; margin-top: 4px; }
+        .footer { margin-top: 32px; color: #444; font-size: 12px; }
+        .footer a { color: #60a5fa; text-decoration: none; }
+        .version-info { margin-top: 12px; font-size: 12px; color: #555; }
         @media (max-width: 480px) {
             h1 { font-size: 22px; }
             .features { grid-template-columns: 1fr; }
@@ -118,43 +78,28 @@
         <div class="logo">🤖</div>
         <h1>DUIX Digital Human</h1>
         <p class="subtitle">AI-Powered Real-Time Digital Human for Android</p>
-
         <div class="download-card">
-            <a href="DuixDigitalHuman-latest.apk" class="download-btn">
-                Download APK
-            </a>
+            <a href="duix_digital_human.apk" class="download-btn">Download APK</a>
             <div class="info">
                 <p>Android 7.0+ (API 24) | ~50MB</p>
                 <p>Free &bull; No account required</p>
             </div>
+            <div class="version-info" id="version-info">Loading version info...</div>
         </div>
-
         <div class="features">
-            <div class="feature">
-                <div class="feature-icon">🎙️</div>
-                <div class="feature-title">Voice Chat</div>
-                <div class="feature-desc">Press & hold to talk with natural speech recognition</div>
-            </div>
-            <div class="feature">
-                <div class="feature-icon">🧠</div>
-                <div class="feature-title">Agnes AI</div>
-                <div class="feature-desc">Powered by agnes-2.0-flash LLM</div>
-            </div>
-            <div class="feature">
-                <div class="feature-icon">🗣️</div>
-                <div class="feature-title">Edge TTS</div>
-                <div class="feature-desc">Natural Chinese voice via Microsoft Edge TTS</div>
-            </div>
-            <div class="feature">
-                <div class="feature-icon">👤</div>
-                <div class="feature-title">Digital Human</div>
-                <div class="feature-desc">Real-time lip-sync & motion rendering</div>
-            </div>
+            <div class="feature"><div class="feature-icon">🎙️</div><div class="feature-title">Voice Chat</div><div class="feature-desc">Press & hold to talk with natural speech recognition</div></div>
+            <div class="feature"><div class="feature-icon">🧠</div><div class="feature-title">Agnes AI</div><div class="feature-desc">Powered by agnes-2.0-flash LLM</div></div>
+            <div class="feature"><div class="feature-icon">🗣️</div><div class="feature-title">Edge TTS</div><div class="feature-desc">Natural Chinese voice via Microsoft Edge TTS</div></div>
+            <div class="feature"><div class="feature-icon">👤</div><div class="feature-title">Digital Human</div><div class="feature-desc">Real-time lip-sync & motion rendering</div></div>
         </div>
-
         <div class="footer">
             <p>Powered by <a href="https://github.com/duixcom/Duix-Mobile" target="_blank">DUIX Mobile SDK</a> &bull; <a href="https://agnes-ai.com" target="_blank">Agnes AI</a></p>
         </div>
     </div>
+    <script>
+        fetch('version.json').then(r=>r.json()).then(d=>{
+            document.getElementById('version-info').textContent='v'+d.version_name+' ('+d.version_code+') | '+new Date(d.releaseDate).toLocaleDateString('zh-CN');
+        }).catch(()=>{document.getElementById('version-info').textContent='';});
+    </script>
 </body>
 </html>

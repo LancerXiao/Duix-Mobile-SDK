@@ -21,10 +21,15 @@ android {
 
     signingConfigs {
         release {
-            storeFile file('../demo.jks')
-            storePassword '123456'
-            keyAlias 'demo'
-            keyPassword '123456'
+            def localProps = new Properties()
+            def localPropsFile = rootProject.file('local.properties')
+            if (localPropsFile.exists()) {
+                localProps.load(new FileInputStream(localPropsFile))
+            }
+            storeFile file(localProps.getProperty('duix.keystore.file', '../demo.jks'))
+            storePassword localProps.getProperty('duix.keystore.password', '123456')
+            keyAlias localProps.getProperty('duix.keystore.alias', 'demo')
+            keyPassword localProps.getProperty('duix.keystore.alias.password', '123456')
         }
     }
 
