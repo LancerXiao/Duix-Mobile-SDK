@@ -21,6 +21,11 @@ public class ZipUtil {
             if (callback != null){
                 total = getZipSize(zipFilePath);
             }
+            // Normalize the output path for consistent comparison
+            String normalizedOutPath = new File(outOutPath).getCanonicalPath();
+            if (!normalizedOutPath.endsWith(File.separator)) {
+                normalizedOutPath += File.separator;
+            }
             ZipInputStream inZip = new ZipInputStream(fis);
             long currentSize = 0;
             ZipEntry zipEntry;
@@ -31,7 +36,7 @@ public class ZipUtil {
                     szName = szName.substring(0, szName.length() - 1);
                     File folder = new File(outOutPath + File.separator + szName);
                     String canonicalPath = folder.getCanonicalPath();
-                    if (!canonicalPath.startsWith(outOutPath)) {
+                    if (!canonicalPath.startsWith(normalizedOutPath) && !canonicalPath.equals(normalizedOutPath.substring(0, normalizedOutPath.length() - 1))) {
                         Logger.e("绝对值路径比较异常忽略该地址: " + folder.getAbsolutePath());
                     } else {
                         if (!folder.exists()) {
@@ -43,7 +48,7 @@ public class ZipUtil {
                 } else {
                     File file = new File(outOutPath + File.separator + szName);
                     String canonicalPath = file.getCanonicalPath();
-                    if (!canonicalPath.startsWith(outOutPath)) {
+                    if (!canonicalPath.startsWith(normalizedOutPath)) {
                         Logger.e( "绝对值路径比较异常忽略该地址: " + file.getAbsolutePath());
                     } else {
                             // Always extract files, even if they exist, to ensure completeness

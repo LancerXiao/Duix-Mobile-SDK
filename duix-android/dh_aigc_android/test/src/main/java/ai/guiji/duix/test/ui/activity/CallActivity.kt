@@ -171,7 +171,47 @@ class CallActivity : BaseActivity() {
                 Constant.CALLBACK_EVENT_INIT_ERROR -> {
                     runOnUiThread {
                         Log.e(TAG, "CALLBACK_EVENT_INIT_ERROR: $msg")
-                        Toast.makeText(mContext, "初始化失败: $msg", Toast.LENGTH_SHORT).show()
+                        // 显示详细的错误信息帮助诊断
+                        val diagnosticInfo = buildString {
+                            append("初始化失败: $msg\n\n")
+                            append("模型URL: $modelUrl\n\n")
+                            // 列出模型目录内容
+                            try {
+                                val duixDir = mContext.getExternalFilesDir("duix")
+                                append("duix目录: ${duixDir?.absolutePath}\n")
+                                val modelDir = File(duixDir, "model")
+                                if (modelDir.exists()) {
+                                    append("model目录内容:\n")
+                                    modelDir.list()?.forEach { append("  $it\n") }
+                                    // 检查gj_dh_res
+                                    val baseDir = File(modelDir, "gj_dh_res")
+                                    if (baseDir.exists()) {
+                                        append("gj_dh_res内容:\n")
+                                        baseDir.list()?.take(10)?.forEach { append("  $it\n") }
+                                    }
+                                    // 检查模型目录
+                                    val dirName = if (modelUrl.startsWith("http")) {
+                                        modelUrl.substringAfterLast("/").removeSuffix(".zip")
+                                    } else modelUrl
+                                    val specificModelDir = File(modelDir, dirName)
+                                    if (specificModelDir.exists()) {
+                                        append("$dirName 内容:\n")
+                                        specificModelDir.list()?.take(10)?.forEach { append("  $it\n") }
+                                    }
+                                    // 检查tmp标记
+                                    val tmpDir = File(modelDir, "tmp")
+                                    if (tmpDir.exists()) {
+                                        append("tmp标记:\n")
+                                        tmpDir.list()?.forEach { append("  $it\n") }
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                append("诊断异常: ${e.message}")
+                            }
+                        }
+                        Log.e(TAG, diagnosticInfo)
+                        binding.tvStatus.text = "初始化失败: $msg"
+                        Toast.makeText(mContext, "初始化失败，请查看状态栏", Toast.LENGTH_LONG).show()
                     }
                 }
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_START -> {
