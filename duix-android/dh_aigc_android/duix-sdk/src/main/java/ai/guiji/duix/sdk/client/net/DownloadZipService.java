@@ -30,6 +30,14 @@ public class DownloadZipService {
     public static void downloadAndUnzip(Context context, String url, File targetDirFile, Callback callback, boolean deleteZip) {
         Executor executor = Executors.newSingleThreadExecutor();
         executor.execute(() -> {
+            // Check if model is already fully extracted (tmp tag exists)
+            File tmpTag = new File(targetDirFile.getParentFile(), "tmp/" + targetDirFile.getName());
+            if (tmpTag.exists() && targetDirFile.exists()) {
+                Logger.d("Model already downloaded and extracted, skip download.");
+                callback.onComplete(targetDirFile);
+                return;
+            }
+
             File cacheDir = context.getExternalCacheDir();
             if (!cacheDir.exists()) {
                 cacheDir.mkdirs();

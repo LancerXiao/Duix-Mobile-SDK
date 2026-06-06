@@ -46,12 +46,9 @@ public class ZipUtil {
                     if (!canonicalPath.startsWith(outOutPath)) {
                         Logger.e( "绝对值路径比较异常忽略该地址: " + file.getAbsolutePath());
                     } else {
-                        if (!file.exists()) {
-                            if (!file.getParentFile().exists()) {
+                            // Always extract files, even if they exist, to ensure completeness
+                            if (file.getParentFile() != null && !file.getParentFile().exists()) {
                                 file.getParentFile().mkdirs();
-                            }
-                            if (!file.createNewFile()) {
-                                return false;
                             }
                             FileOutputStream out = new FileOutputStream(file);
                             int len;
@@ -65,7 +62,6 @@ public class ZipUtil {
                                 }
                             }
                             out.close();
-                        }
                     }
                 }
             }

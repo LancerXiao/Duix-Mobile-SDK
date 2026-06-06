@@ -26,8 +26,8 @@ public class FileDownloader {
         try {
             URL httpUrl = new URL(url);
             HttpURLConnection conn = (HttpURLConnection) httpUrl.openConnection();
-            conn.setConnectTimeout(15000);
-            conn.setReadTimeout(15000);
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(60000);
             long contentLength = conn.getContentLengthLong();
             conn.connect();
             int httpCode = conn.getResponseCode();//获取HTTP状态码
