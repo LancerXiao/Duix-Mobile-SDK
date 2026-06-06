@@ -21,6 +21,9 @@ class EdgeTtsService {
         private const val WSS_URL = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1"
         private const val TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
         private const val REQUEST_ID_PREFIX = "2CBD2"
+        private const val MAX_RETRIES = 3
+        private const val RETRY_DELAY_MS = 1000L
+        private const val SYNTHESIS_TIMEOUT_MS = 30000L
 
         // 中文女声 - 晓晓（推荐，音质最好）
         const val VOICE_XIAOXIAO = "zh-CN-XiaoxiaoNeural"
@@ -38,6 +41,7 @@ class EdgeTtsService {
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS)
+        .pingInterval(5, TimeUnit.SECONDS)
         .build()
 
     private var webSocket: WebSocket? = null
@@ -47,6 +51,10 @@ class EdgeTtsService {
     private val audioChunks = mutableListOf<ByteArray>()
     private var audioFormat: String? = null
 
+    // 超时处理
+    private val timeoutHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var timeoutRunnable: Runnable? = null
+
     interface Callback {
         fun onAudioData(data: ByteArray)
         fun onComplete()
@@ -54,11 +62,15 @@ class EdgeTtsService {
     }
 
     /**
-     * 合成语音并返回 MP3 音频数据
+     * 合成语音并返回 MP3 音频数据（带重试逻辑）
      */
     fun synthesize(text: String, voice: String = VOICE_XIAOXIAO, callback: Callback) {
+        synthesizeWithRetry(text, voice, callback, 0)
+    }
+
+    private fun synthesizeWithRetry(text: String, voice: String, callback: Callback, retryCount: Int) {
         if (isSynthesizing) {
-            callback.onError("Already synthesizing")
+            callback.onError("正在合成中，请稍候")
             return
         }
 
@@ -73,6 +85,24 @@ class EdgeTtsService {
         val request = Request.Builder()
             .url(url)
             .build()
+
+        // 设置超时
+        timeoutRunnable = Runnable {
+            if (isSynthesizing) {
+                Log.w(TAG, "Synthesis timeout, retryCount=$retryCount")
+                webSocket?.close(1000, "Timeout")
+                isSynthesizing = false
+                if (retryCount < MAX_RETRIES) {
+                    Log.d(TAG, "Retrying synthesis (attempt ${retryCount + 1}/$MAX_RETRIES)")
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        synthesizeWithRetry(text, voice, callback, retryCount + 1)
+                    }, RETRY_DELAY_MS)
+                } else {
+                    callback.onError("语音合成超时，请重试")
+                }
+            }
+        }
+        timeoutHandler.postDelayed(timeoutRunnable!!, SYNTHESIS_TIMEOUT_MS)
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -102,6 +132,7 @@ class EdgeTtsService {
                 } else if (text.contains("Path:turn.end")) {
                     Log.d(TAG, "Synthesis completed, total chunks: ${audioChunks.size}")
                     isSynthesizing = false
+                    cancelTimeout()
                     // 合并所有音频数据
                     val fullAudio = combineAudioChunks()
                     if (fullAudio.isNotEmpty()) {
@@ -133,16 +164,37 @@ class EdgeTtsService {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e(TAG, "Edge TTS WebSocket failure", t)
+                Log.e(TAG, "Edge TTS WebSocket failure (attempt ${retryCount + 1}/$MAX_RETRIES)", t)
                 isSynthesizing = false
-                callback.onError(t.message ?: "WebSocket connection failed")
+                cancelTimeout()
+
+                if (retryCount < MAX_RETRIES) {
+                    Log.d(TAG, "Retrying synthesis (attempt ${retryCount + 1}/$MAX_RETRIES)")
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        synthesizeWithRetry(text, voice, callback, retryCount + 1)
+                    }, RETRY_DELAY_MS)
+                } else {
+                    val errorMsg = when {
+                        t.message?.contains("timeout", ignoreCase = true) == true -> "连接超时，请检查网络"
+                        t.message?.contains("connect", ignoreCase = true) == true -> "无法连接服务器"
+                        t.message?.contains("dns", ignoreCase = true) == true -> "DNS解析失败"
+                        else -> "语音合成失败: ${t.message ?: "未知错误"}"
+                    }
+                    callback.onError(errorMsg)
+                }
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "Edge TTS WebSocket closed")
                 isSynthesizing = false
+                cancelTimeout()
             }
         })
+    }
+
+    private fun cancelTimeout() {
+        timeoutRunnable?.let { timeoutHandler.removeCallbacks(it) }
+        timeoutRunnable = null
     }
 
     private fun combineAudioChunks(): ByteArray {
@@ -173,6 +225,7 @@ class EdgeTtsService {
 
     fun stop() {
         isSynthesizing = false
+        cancelTimeout()
         webSocket?.close(1000, "Client stopping")
         webSocket = null
     }

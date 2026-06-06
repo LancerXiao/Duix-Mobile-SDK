@@ -5,31 +5,78 @@
     android:gravity="center">
 
     <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="138dp"
-        android:background="@drawable/shape_solid_b3000000_radius_7"
-        android:gravity="center"
-        android:minWidth="138dp"
+        android:layout_width="280dp"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_loading_dialog"
+        android:gravity="center_horizontal"
         android:orientation="vertical"
-        android:paddingBottom="2dp">
+        android:paddingHorizontal="24dp"
+        android:paddingTop="28dp"
+        android:paddingBottom="20dp">
 
         <ImageView
-            android:id="@+id/iv_progress"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:id="@+id/ivProgress"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
             android:src="@mipmap/iv_progress" />
 
         <TextView
-            android:id="@+id/tv_content"
+            android:id="@+id/tvStage"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="16dp"
             android:gravity="center"
-            android:singleLine="true"
             android:text="@string/loading"
-            android:layout_marginHorizontal="12dp"
             android:textColor="@color/white"
-            android:textSize="12dp"
+            android:textSize="15sp"
             android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvContent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:textColor="#B3FFFFFF"
+            android:textSize="13sp"
+            android:singleLine="true" />
+
+        <ProgressBar
+            android:id="@+id/progressBar"
+            style="@android:style/Widget.ProgressBar.Horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="4dp"
+            android:layout_marginTop="14dp"
+            android:max="100"
+            android:progress="0"
+            android:progressDrawable="@drawable/bg_progress_bar" />
+
+        <TextView
+            android:id="@+id/tvProgressDetail"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:textColor="#80FFFFFF"
+            android:textSize="11sp"
+            android:singleLine="true"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/btnRetry"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_btn_retry"
+            android:gravity="center"
+            android:paddingHorizontal="24dp"
+            android:text="@string/retry"
+            android:textColor="@color/white"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:visibility="gone"
+            android:clickable="true"
+            android:focusable="true" />
+
     </LinearLayout>
 </LinearLayout>

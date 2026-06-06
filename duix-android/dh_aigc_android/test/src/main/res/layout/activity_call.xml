@@ -5,128 +5,283 @@
     android:fitsSystemWindows="true"
     android:layout_height="match_parent">
 
+    <!-- Background image -->
     <ImageView
         android:id="@+id/iv_bg"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scaleType="centerCrop" />
 
+    <!-- Digital human rendering (full screen) -->
     <ai.guiji.duix.sdk.client.render.DUIXTextureView
         android:id="@+id/glTextureView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Status bar at top -->
+    <!-- Tap overlay to interrupt speaking -->
+    <View
+        android:id="@+id/tapOverlay"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/aiResponseBubble"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Top toolbar - semi-transparent -->
+    <LinearLayout
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_toolbar"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <!-- Back button -->
+        <ImageView
+            android:id="@+id/btnBack"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:src="@android:drawable/ic_menu_revert"
+            android:contentDescription="Back"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            app:tint="@color/white" />
+
+        <!-- Title -->
+        <TextView
+            android:id="@+id/tvTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="DUIX 数字人"
+            android:textColor="@color/white"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <!-- Mute button -->
+        <ImageView
+            android:id="@+id/btnMute"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:src="@android:drawable/ic_media_pause"
+            android:contentDescription="Mute"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            app:tint="@color/white" />
+
+        <!-- Unmute button (hidden by default) -->
+        <ImageView
+            android:id="@+id/btnUnmute"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:src="@android:drawable/ic_media_play"
+            android:contentDescription="Unmute"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:visibility="gone"
+            app:tint="@color/white" />
+
+    </LinearLayout>
+
+    <!-- Status indicator (small, below toolbar) -->
     <TextView
         android:id="@+id/tvStatus"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:background="#88000000"
-        android:padding="12dp"
-        android:text="Initializing..."
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_chat_bubble"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:text="初始化中..."
         android:textColor="@color/white"
-        android:textSize="14sp"
-        app:layout_constraintTop_toTopOf="parent" />
-
-    <!-- Recording indicator -->
-    <View
-        android:id="@+id/ivRecordingIndicator"
-        android:layout_width="16dp"
-        android:layout_height="16dp"
-        android:layout_marginStart="12dp"
-        android:layout_marginTop="8dp"
-        android:background="@android:color/holo_red_dark"
-        android:visibility="gone"
+        android:textSize="12sp"
+        android:visibility="visible"
+        app:layout_constraintTop_toBottomOf="@+id/toolbar"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/tvStatus" />
+        app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Top controls -->
-    <androidx.appcompat.widget.SwitchCompat
-        android:id="@+id/switchMute"
-        android:text="Mute"
-        android:layout_margin="12dp"
-        android:enabled="false"
-        app:layout_constraintTop_toBottomOf="@+id/tvStatus"
-        app:layout_constraintEnd_toEndOf="parent"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"/>
-
-    <Button
-        android:id="@+id/btnRandomMotion"
-        android:text="Random Motion"
-        android:textSize="13sp"
-        android:visibility="invisible"
-        android:textColor="@color/white"
-        app:layout_constraintTop_toBottomOf="@+id/switchMute"
-        app:layout_constraintEnd_toEndOf="parent"
-        android:layout_margin="6dp"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"/>
-
-    <!-- Bottom controls -->
+    <!-- AI Response chat bubble -->
     <LinearLayout
-        android:id="@+id/bottomBar"
+        android:id="@+id/aiResponseBubble"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="#88000000"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="12dp"
+        android:background="@drawable/bg_chat_bubble"
         android:padding="12dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@+id/bottomPanel"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <!-- Thinking indicator -->
+        <LinearLayout
+            android:id="@+id/thinkingIndicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:visibility="gone">
+
+            <View
+                android:layout_width="6dp"
+                android:layout_height="6dp"
+                android:background="@android:color/white"
+                android:layout_marginEnd="4dp" />
+
+            <View
+                android:layout_width="6dp"
+                android:layout_height="6dp"
+                android:background="@android:color/white"
+                android:layout_marginEnd="4dp" />
+
+            <View
+                android:layout_width="6dp"
+                android:layout_height="6dp"
+                android:background="@android:color/white" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="思考中..."
+                android:textColor="@color/white"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- AI response text -->
+        <ScrollView
+            android:id="@+id/aiResponseScroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxHeight="120dp">
+
+            <TextView
+                android:id="@+id/tvAiResponse"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/white"
+                android:textSize="14sp"
+                android:lineSpacingExtra="2dp" />
+
+        </ScrollView>
+
+    </LinearLayout>
+
+    <!-- Bottom panel -->
+    <LinearLayout
+        android:id="@+id/bottomPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/bg_bottom_panel"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="16dp"
         app:layout_constraintBottom_toBottomOf="parent">
 
-        <!-- Text input row -->
+        <!-- Chat input row -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
+            <!-- Rounded EditText -->
             <EditText
                 android:id="@+id/etInput"
                 android:layout_width="0dp"
                 android:layout_height="44dp"
                 android:layout_weight="1"
-                android:background="@android:color/transparent"
-                android:hint="Type a message..."
+                android:background="@drawable/bg_chat_input"
+                android:hint="输入消息..."
                 android:textColorHint="#99FFFFFF"
                 android:textColor="@color/white"
                 android:textSize="14sp"
                 android:enabled="false"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
                 android:inputType="text"
-                android:imeOptions="actionSend" />
+                android:imeOptions="actionSend"
+                android:singleLine="true" />
 
-            <Button
+            <!-- Send button -->
+            <ImageView
                 android:id="@+id/btnSend"
-                android:text="Send"
-                android:textSize="13sp"
-                android:textColor="@color/white"
-                android:enabled="false"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:layout_marginStart="8dp"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp" />
+                android:background="@drawable/bg_send_button"
+                android:padding="8dp"
+                android:src="@android:drawable/ic_menu_share"
+                android:contentDescription="Send"
+                android:enabled="false"
+                android:alpha="0.5"
+                app:tint="@color/white" />
+
         </LinearLayout>
 
-        <!-- Talk button -->
-        <Button
-            android:id="@+id/btnTalk"
-            android:text="Hold to Talk"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:textColor="@color/white"
-            android:enabled="false"
-            android:layout_marginTop="8dp"
+        <!-- Microphone button area -->
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="56dp" />
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center">
 
-        <!-- Stop button -->
-        <Button
-            android:id="@+id/btnStopPlay"
-            android:text="Stop"
-            android:textSize="13sp"
-            android:textColor="@color/white"
-            android:enabled="false"
-            android:layout_marginTop="4dp"
+            <!-- Recording pulse ring (outer) -->
+            <View
+                android:id="@+id/recordingPulseOuter"
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_recording_pulse"
+                android:visibility="gone" />
+
+            <!-- Recording pulse ring (inner) -->
+            <View
+                android:id="@+id/recordingPulseInner"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_mic_recording_outer"
+                android:visibility="gone" />
+
+            <!-- Mic button -->
+            <ImageView
+                android:id="@+id/btnMic"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_mic_button"
+                android:padding="14dp"
+                android:src="@android:drawable/ic_btn_speak_now"
+                android:contentDescription="Hold to talk"
+                android:enabled="false"
+                android:alpha="0.5"
+                app:tint="@color/white" />
+
+        </FrameLayout>
+
+        <!-- Mic button label -->
+        <TextView
+            android:id="@+id/tvMicLabel"
             android:layout_width="match_parent"
-            android:layout_height="40dp" />
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:layout_marginTop="4dp"
+            android:text="按住说话"
+            android:textColor="#BBFFFFFF"
+            android:textSize="12sp" />
 
     </LinearLayout>
 

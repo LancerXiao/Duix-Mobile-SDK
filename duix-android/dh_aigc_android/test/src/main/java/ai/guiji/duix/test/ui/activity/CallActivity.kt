@@ -14,9 +14,16 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.opengl.GLSurfaceView
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.AnimationUtils
+import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import com.bumptech.glide.Glide
 
@@ -24,6 +31,11 @@ class CallActivity : BaseActivity() {
 
     companion object {
         const val GL_CONTEXT_VERSION = 2
+        private const val AUTO_LISTEN_DELAY_MS = 1500L
+    }
+
+    enum class State {
+        IDLE, LISTENING, THINKING, SPEAKING
     }
 
     private var modelUrl = ""
@@ -41,10 +53,22 @@ class CallActivity : BaseActivity() {
     private lateinit var mp3ToPcmConverter: Mp3ToPcmConverter
 
     // 状态管理
+    private var currentState = State.IDLE
     private var isDuiXReady = false
-    private var isRecording = false
-    private var isSpeaking = false
-    private var isProcessing = false
+    private var isMuted = false
+
+    // 自动回到监听
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val autoListenRunnable = Runnable {
+        if (currentState == State.IDLE && isDuiXReady) {
+            startListening()
+        }
+    }
+
+    // 隐藏气泡
+    private val hideBubbleRunnable = Runnable {
+        binding.aiResponseBubble.visibility = View.GONE
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,18 +92,43 @@ class CallActivity : BaseActivity() {
         binding.glTextureView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
         binding.glTextureView.isOpaque = false
 
-        // 静音开关
-        binding.switchMute.setOnCheckedChangeListener { _, isChecked ->
-            duix?.setVolume(if (isChecked) 0.0F else 1.0F)
+        // 返回按钮
+        binding.btnBack.setOnClickListener {
+            finish()
         }
 
-        // 长按说话按钮
-        binding.btnTalk.setOnTouchListener { _, event ->
+        // 静音切换
+        binding.btnMute.setOnClickListener {
+            isMuted = true
+            duix?.setVolume(0.0F)
+            binding.btnMute.visibility = View.GONE
+            binding.btnUnmute.visibility = View.VISIBLE
+            performHapticFeedback()
+        }
+
+        binding.btnUnmute.setOnClickListener {
+            isMuted = false
+            duix?.setVolume(1.0F)
+            binding.btnMute.visibility = View.VISIBLE
+            binding.btnUnmute.visibility = View.GONE
+            performHapticFeedback()
+        }
+
+        // 麦克风按钮 - 长按说话
+        binding.btnMic.setOnTouchListener { _, event ->
             when (event.action) {
-                MotionEvent.ACTION_DOWN -> startListening()
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> stopListening()
+                MotionEvent.ACTION_DOWN -> onMicButtonDown()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> onMicButtonUp()
             }
             true
+        }
+
+        // 点击数字人区域中断说话
+        binding.tapOverlay.setOnClickListener {
+            if (currentState == State.SPEAKING) {
+                stopSpeaking()
+                performHapticFeedback()
+            }
         }
 
         // 文本输入发送
@@ -88,17 +137,22 @@ class CallActivity : BaseActivity() {
             if (text.isNotEmpty()) {
                 binding.etInput.text.clear()
                 sendToLlm(text)
+                performHapticFeedback()
             }
         }
 
-        // 停止播放
-        binding.btnStopPlay.setOnClickListener {
-            stopSpeaking()
-        }
-
-        // 随机动作
-        binding.btnRandomMotion.setOnClickListener {
-            duix?.startRandomMotion(true)
+        // 键盘发送
+        binding.etInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEND) {
+                val text = binding.etInput.text.toString().trim()
+                if (text.isNotEmpty()) {
+                    binding.etInput.text.clear()
+                    sendToLlm(text)
+                }
+                true
+            } else {
+                false
+            }
         }
 
         // 初始化渲染器
@@ -117,20 +171,29 @@ class CallActivity : BaseActivity() {
                 Constant.CALLBACK_EVENT_INIT_ERROR -> {
                     runOnUiThread {
                         Log.e(TAG, "CALLBACK_EVENT_INIT_ERROR: $msg")
-                        Toast.makeText(mContext, "Init error: $msg", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(mContext, "初始化失败: $msg", Toast.LENGTH_SHORT).show()
                     }
                 }
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_START -> {
-                    isSpeaking = true
-                    updateUI()
+                    runOnUiThread {
+                        currentState = State.SPEAKING
+                        updateUI()
+                    }
                 }
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_END -> {
-                    isSpeaking = false
-                    updateUI()
+                    runOnUiThread {
+                        currentState = State.IDLE
+                        updateUI()
+                        // 自动回到监听状态
+                        scheduleAutoListen()
+                    }
                 }
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_ERROR -> {
-                    isSpeaking = false
-                    updateUI()
+                    runOnUiThread {
+                        currentState = State.IDLE
+                        updateUI()
+                        scheduleAutoListen()
+                    }
                 }
                 Constant.CALLBACK_EVENT_MOTION_START -> {}
                 Constant.CALLBACK_EVENT_MOTION_END -> {}
@@ -141,25 +204,41 @@ class CallActivity : BaseActivity() {
 
     private fun initOk() {
         runOnUiThread {
-            binding.btnTalk.isEnabled = true
-            binding.btnSend.isEnabled = true
-            binding.etInput.isEnabled = true
-            binding.switchMute.isEnabled = true
-            binding.btnStopPlay.isEnabled = true
-            updateStatus("Ready - Press and hold to talk")
+            enableControls(true)
+            currentState = State.IDLE
+            updateStatus("就绪 - 按住麦克风说话")
             updateUI()
+        }
+    }
 
-            mModelInfo?.let { modelInfo ->
-                if (modelInfo.motionRegions.isNotEmpty()) {
-                    binding.btnRandomMotion.visibility = View.VISIBLE
-                }
+    private fun onMicButtonDown() {
+        performHapticFeedback()
+        when (currentState) {
+            State.SPEAKING -> {
+                // 点击时正在说话 -> 中断
+                stopSpeaking()
+            }
+            State.IDLE -> {
+                startListening()
+            }
+            State.LISTENING -> {
+                // 已经在听了，不做处理
+            }
+            State.THINKING -> {
+                // 正在思考，不做处理
             }
         }
     }
 
-    private fun startListening() {
-        if (!isDuiXReady || isProcessing || isSpeaking) return
+    private fun onMicButtonUp() {
+        // 松开时如果在监听状态，停止监听
+        if (currentState == State.LISTENING) {
+            stopListening()
+        }
+    }
 
+    private fun startListening() {
+        if (!isDuiXReady || currentState == State.THINKING || currentState == State.SPEAKING) return
         requestPermission(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
     }
 
@@ -174,59 +253,63 @@ class CallActivity : BaseActivity() {
 
     @SuppressLint("SetTextI18n")
     private fun doStartListening() {
-        if (isRecording) return
-        isRecording = true
-        updateStatus("Listening...")
+        if (currentState == State.LISTENING) return
+        currentState = State.LISTENING
+        updateStatus("正在聆听...")
         updateUI()
-
-        // 停止当前播放
-        stopSpeaking()
 
         // 使用Android原生SpeechRecognizer
         asrService.startListening(object : AndroidAsrService.Callback {
             override fun onReady() {
-                runOnUiThread { updateStatus("Listening... (speak now)") }
+                runOnUiThread { updateStatus("正在聆听...请说话") }
             }
 
             override fun onPartialResult(text: String) {
-                runOnUiThread { updateStatus("Hearing: $text") }
+                runOnUiThread { updateStatus("听到: $text") }
             }
 
             override fun onFinalResult(text: String) {
                 runOnUiThread {
-                    isRecording = false
                     if (text.isNotEmpty()) {
-                        updateStatus("Recognized: $text")
+                        updateStatus("识别: $text")
                         sendToLlm(text)
                     } else {
-                        updateStatus("No speech detected")
+                        currentState = State.IDLE
+                        updateStatus("未检测到语音，请重试")
                         updateUI()
+                        scheduleAutoListen()
                     }
                 }
             }
 
             override fun onError(error: String) {
                 runOnUiThread {
-                    updateStatus("ASR Error: $error")
-                    isRecording = false
+                    currentState = State.IDLE
+                    updateStatus("语音识别出错: $error")
                     updateUI()
+                    // 自动重试
+                    if (error.contains("No speech") || error.contains("No match")) {
+                        scheduleAutoListen()
+                    }
                 }
             }
         })
     }
 
     private fun stopListening() {
-        if (!isRecording) return
-        isRecording = false
+        if (currentState != State.LISTENING) return
         asrService.stopListening()
-        updateUI()
+        // 状态会在 onFinalResult 或 onError 中更新
     }
 
     private fun sendToLlm(text: String) {
-        if (isProcessing) return
-        isProcessing = true
-        updateStatus("Thinking...")
+        if (currentState == State.THINKING) return
+        currentState = State.THINKING
+        updateStatus("思考中...")
         updateUI()
+
+        // 显示气泡和思考动画
+        showAiBubble(thinking = true, text = "")
 
         val fullResponse = StringBuilder()
 
@@ -234,27 +317,33 @@ class CallActivity : BaseActivity() {
             override fun onToken(token: String) {
                 fullResponse.append(token)
                 runOnUiThread {
-                    updateStatus("AI: ${fullResponse}")
+                    // 逐步显示文本
+                    showAiBubble(thinking = false, text = fullResponse.toString())
+                    updateStatus("AI回复中...")
                 }
             }
 
             override fun onComplete(fullText: String) {
                 runOnUiThread {
-                    updateStatus("AI: $fullText")
-                    isProcessing = false
+                    showAiBubble(thinking = false, text = fullText)
                     if (fullText.isNotEmpty()) {
                         synthesizeAndPlay(fullText)
                     } else {
+                        currentState = State.IDLE
+                        updateStatus("就绪 - 按住麦克风说话")
                         updateUI()
+                        scheduleAutoListen()
                     }
                 }
             }
 
             override fun onError(error: String) {
                 runOnUiThread {
-                    updateStatus("LLM Error: $error")
-                    isProcessing = false
+                    currentState = State.IDLE
+                    updateStatus("LLM错误: $error")
+                    hideAiBubble()
                     updateUI()
+                    scheduleAutoListen()
                 }
             }
         })
@@ -264,12 +353,12 @@ class CallActivity : BaseActivity() {
      * 使用 Edge TTS 合成语音 -> MP3 转 PCM -> 推送给 DUIX 数字人
      */
     private fun synthesizeAndPlay(text: String) {
-        updateStatus("Synthesizing...")
-        isSpeaking = true
+        currentState = State.SPEAKING
+        updateStatus("语音合成中...")
         updateUI()
 
         val currentDuix = duix ?: run {
-            isSpeaking = false
+            currentState = State.IDLE
             updateUI()
             return
         }
@@ -287,19 +376,26 @@ class CallActivity : BaseActivity() {
                     }
 
                     override fun onComplete() {
-                        isSpeaking = false
                         runOnUiThread {
-                            updateStatus("Ready - Press and hold to talk")
+                            if (currentState == State.SPEAKING) {
+                                currentState = State.IDLE
+                            }
+                            updateStatus("就绪 - 按住麦克风说话")
                             updateUI()
+                            scheduleAutoListen()
                         }
                     }
 
                     override fun onError(error: String) {
                         Log.e(TAG, "MP3 to PCM conversion error: $error")
-                        isSpeaking = false
                         runOnUiThread {
-                            updateStatus("TTS conversion error")
+                            // TTS转换失败，但文本已显示，仍然回到IDLE
+                            if (currentState == State.SPEAKING) {
+                                currentState = State.IDLE
+                            }
+                            updateStatus("语音转换失败，文本已显示")
                             updateUI()
+                            scheduleAutoListen()
                         }
                     }
                 })
@@ -310,10 +406,14 @@ class CallActivity : BaseActivity() {
             }
 
             override fun onError(error: String) {
-                isSpeaking = false
                 runOnUiThread {
-                    updateStatus("TTS Error: $error")
+                    // TTS失败，但文本已经显示在气泡中
+                    if (currentState == State.SPEAKING) {
+                        currentState = State.IDLE
+                    }
+                    updateStatus("语音合成失败，文本已显示")
                     updateUI()
+                    scheduleAutoListen()
                 }
             }
         })
@@ -322,9 +422,13 @@ class CallActivity : BaseActivity() {
     private fun stopSpeaking() {
         edgeTtsService.stop()
         duix?.stopAudio()
-        isSpeaking = false
+        currentState = State.IDLE
+        updateStatus("就绪 - 按住麦克风说话")
         updateUI()
+        cancelAutoListen()
     }
+
+    // --- UI 更新 ---
 
     @SuppressLint("SetTextI18n")
     private fun updateStatus(text: String) {
@@ -332,19 +436,122 @@ class CallActivity : BaseActivity() {
     }
 
     private fun updateUI() {
-        binding.btnTalk.isEnabled = isDuiXReady && !isProcessing && !isSpeaking
-        binding.btnTalk.text = when {
-            isRecording -> "Listening..."
-            isProcessing -> "Thinking..."
-            isSpeaking -> "Speaking..."
-            else -> "Hold to Talk"
+        val micEnabled = isDuiXReady && currentState != State.THINKING
+        val sendEnabled = isDuiXReady && currentState == State.IDLE
+
+        // 麦克风按钮
+        binding.btnMic.isEnabled = micEnabled
+        binding.btnMic.alpha = if (micEnabled) 1.0f else 0.5f
+
+        // 发送按钮
+        binding.btnSend.isEnabled = sendEnabled
+        binding.btnSend.alpha = if (sendEnabled) 1.0f else 0.5f
+
+        // 输入框
+        binding.etInput.isEnabled = sendEnabled
+
+        // 麦克风按钮标签
+        binding.tvMicLabel.text = when (currentState) {
+            State.IDLE -> "按住说话"
+            State.LISTENING -> "松开结束"
+            State.THINKING -> "思考中..."
+            State.SPEAKING -> "点击打断"
         }
 
-        binding.ivRecordingIndicator.visibility = if (isRecording) View.VISIBLE else View.GONE
+        // 麦克风按钮背景
+        binding.btnMic.background = when (currentState) {
+            State.LISTENING -> {
+                binding.recordingPulseOuter.visibility = View.VISIBLE
+                binding.recordingPulseInner.visibility = View.VISIBLE
+                binding.recordingPulseOuter.startAnimation(
+                    AnimationUtils.loadAnimation(this, R.anim.pulse_recording)
+                )
+                getDrawable(R.drawable.bg_mic_recording)
+            }
+            State.SPEAKING -> {
+                binding.recordingPulseOuter.visibility = View.GONE
+                binding.recordingPulseInner.visibility = View.GONE
+                binding.recordingPulseOuter.clearAnimation()
+                getDrawable(R.drawable.bg_mic_recording)
+            }
+            else -> {
+                binding.recordingPulseOuter.visibility = View.GONE
+                binding.recordingPulseInner.visibility = View.GONE
+                binding.recordingPulseOuter.clearAnimation()
+                getDrawable(R.drawable.bg_mic_button)
+            }
+        }
+    }
+
+    private fun showAiBubble(thinking: Boolean, text: String) {
+        cancelHideBubble()
+        binding.aiResponseBubble.visibility = View.VISIBLE
+        binding.aiResponseBubble.startAnimation(
+            AnimationUtils.loadAnimation(this, R.anim.fade_in_up)
+        )
+
+        binding.thinkingIndicator.visibility = if (thinking) View.VISIBLE else View.GONE
+        binding.tvAiResponse.text = text
+        binding.tvAiResponse.visibility = if (text.isNotEmpty()) View.VISIBLE else View.GONE
+
+        // 自动滚动到底部
+        binding.aiResponseScroll.post {
+            binding.aiResponseScroll.fullScroll(View.FOCUS_DOWN)
+        }
+    }
+
+    private fun hideAiBubble() {
+        if (binding.aiResponseBubble.visibility == View.VISIBLE) {
+            binding.aiResponseBubble.startAnimation(
+                AnimationUtils.loadAnimation(this, R.anim.fade_out_down)
+            )
+        }
+        // 延迟隐藏
+        mainHandler.postDelayed(hideBubbleRunnable, 500)
+    }
+
+    private fun cancelHideBubble() {
+        mainHandler.removeCallbacks(hideBubbleRunnable)
+    }
+
+    private fun scheduleAutoListen() {
+        cancelAutoListen()
+        mainHandler.postDelayed(autoListenRunnable, AUTO_LISTEN_DELAY_MS)
+    }
+
+    private fun cancelAutoListen() {
+        mainHandler.removeCallbacks(autoListenRunnable)
+    }
+
+    private fun enableControls(enabled: Boolean) {
+        binding.btnMic.isEnabled = enabled
+        binding.btnSend.isEnabled = enabled
+        binding.etInput.isEnabled = enabled
+        binding.btnMic.alpha = if (enabled) 1.0f else 0.5f
+        binding.btnSend.alpha = if (enabled) 1.0f else 0.5f
+    }
+
+    @Suppress("DEPRECATION")
+    private fun performHapticFeedback() {
+        val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val vibratorManager = getSystemService(VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            vibratorManager?.defaultVibrator
+        } else {
+            getSystemService(VIBRATOR_SERVICE) as? Vibrator
+        }
+        vibrator?.let {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                it.vibrate(VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                it.vibrate(30)
+            }
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        cancelAutoListen()
+        cancelHideBubble()
         asrService.destroy()
         edgeTtsService.stop()
         duix?.release()

@@ -1,121 +1,294 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="12dp">
+    android:orientation="vertical"
+    android:background="@color/bg_main">
 
-    <TextView
-        android:id="@+id/tv_title"
+    <!-- Header with gradient background -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="120dp"
-        android:gravity="center"
-        android:text="@string/app_name"
-        android:textColor="@color/black"
-        android:textSize="18dp"
-        android:textStyle="italic|bold"
-        app:layout_constraintTop_toTopOf="parent" />
-
-    <TextView
-        android:id="@+id/tv_sdk_version"
-        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textSize="12sp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/tv_title" />
+        android:background="@drawable/bg_header_gradient"
+        android:orientation="vertical"
+        android:paddingTop="48dp"
+        android:paddingBottom="32dp"
+        android:paddingHorizontal="24dp">
 
+        <!-- Top bar: settings icon + version -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <ImageView
+                android:id="@+id/ivSettings"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_gravity="end|center_vertical"
+                android:src="@android:drawable/ic_menu_preferences"
+                android:contentDescription="@string/settings"
+                android:padding="4dp"
+                app:tint="@color/text_on_primary" />
+
+            <TextView
+                android:id="@+id/tvSdkVersion"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="start|center_vertical"
+                android:textSize="11sp"
+                android:textColor="#B3FFFFFF"
+                tools:text="SDK Version: 1.0.0" />
+        </FrameLayout>
+
+        <!-- App title -->
+        <TextView
+            android:id="@+id/tvAppName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="@color/text_on_primary"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+
+        <!-- Subtitle -->
+        <TextView
+            android:id="@+id/tvSubtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/app_subtitle"
+            android:textColor="#B3FFFFFF"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- Main content area -->
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/tv_sdk_version">
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:clipToPadding="false"
+        android:paddingTop="20dp">
 
-        <androidx.constraintlayout.widget.ConstraintLayout
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="20dp">
 
+            <!-- Download tips -->
             <TextView
                 android:id="@+id/tvDownloadTips"
-                app:layout_constraintTop_toTopOf="parent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:text="@string/main_download_tips"
                 android:textSize="13sp"
-                android:textColor="@color/black"
-                android:textStyle="bold"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"/>
+                android:textColor="@color/text_secondary"
+                android:lineSpacingExtra="2dp"
+                android:layout_marginBottom="20dp" />
 
+            <!-- Model selection label -->
             <TextView
-                android:id="@+id/tvBaseConfig"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/base_config_url"
-                android:textSize="13sp"
-                app:layout_constraintTop_toBottomOf="@+id/tvDownloadTips"
-                app:layout_constraintStart_toStartOf="parent"/>
-
-            <EditText
-                android:id="@+id/etBaseConfig"
-                android:layout_marginTop="12dp"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:text="http://114.215.183.45/downloads/duix/models/gj_dh_res.zip"
-                android:textSize="13sp"
-                app:layout_constraintTop_toBottomOf="@+id/tvBaseConfig"
-                />
-
-            <TextView
-                android:id="@+id/tvModelUrl"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="32dp"
                 android:text="@string/model_url"
-                android:textSize="13sp"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/etBaseConfig"  />
+                android:textSize="16sp"
+                android:textColor="@color/text_primary"
+                android:textStyle="bold"
+                android:layout_marginBottom="12dp" />
 
-            <Button
-                android:id="@+id/btnMoreModel"
-                android:text="@string/more"
-                android:layout_marginTop="12dp"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                app:layout_constraintTop_toBottomOf="@+id/tvModelUrl"
-                app:layout_constraintEnd_toEndOf="parent"
-                />
-
-            <EditText
-                android:id="@+id/etUrl"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:text="http://114.215.183.45/downloads/duix/models/bendi3_20240518.zip"
-                android:textSize="13sp"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="@+id/btnMoreModel"
-                app:layout_constraintEnd_toStartOf="@+id/btnMoreModel"
-                />
-
-            <Button
-                android:id="@+id/btnPlay"
+            <!-- Model card: 小本 -->
+            <LinearLayout
+                android:id="@+id/cardModel1"
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="20dp"
-                android:text="@string/play"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/etUrl" />
-
-            <androidx.appcompat.widget.SwitchCompat
-                android:id="@+id/switchDebug"
-                android:text="@string/debug_message"
-                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="13sp"
-                android:layout_margin="12dp"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/btnPlay"
-                />
+                android:orientation="horizontal"
+                android:background="@drawable/bg_card_border_16"
+                android:padding="16dp"
+                android:layout_marginBottom="12dp"
+                android:gravity="center_vertical"
+                android:clickable="true"
+                android:focusable="true">
 
-        </androidx.constraintlayout.widget.ConstraintLayout>
+                <!-- Model avatar/icon placeholder -->
+                <LinearLayout
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="@drawable/bg_chip_selected"
+                    android:gravity="center"
+                    android:layout_marginEnd="14dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="小"
+                        android:textSize="20sp"
+                        android:textColor="@color/primary"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- Model info -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvModel1Name"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/model_xiaoben"
+                        android:textSize="16sp"
+                        android:textColor="@color/text_primary"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvModel1Status"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/model_not_downloaded"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_secondary" />
+                </LinearLayout>
+
+                <!-- Download status indicator -->
+                <ImageView
+                    android:id="@+id/ivModel1Status"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/bg_status_not_downloaded"
+                    android:contentDescription="@string/model_not_downloaded" />
+            </LinearLayout>
+
+            <!-- Model card: 艾瑞克 -->
+            <LinearLayout
+                android:id="@+id/cardModel2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_card_border_16"
+                android:padding="16dp"
+                android:layout_marginBottom="24dp"
+                android:gravity="center_vertical"
+                android:clickable="true"
+                android:focusable="true">
+
+                <!-- Model avatar/icon placeholder -->
+                <LinearLayout
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="@drawable/bg_chip_selected"
+                    android:gravity="center"
+                    android:layout_marginEnd="14dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="艾"
+                        android:textSize="20sp"
+                        android:textColor="@color/primary"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- Model info -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvModel2Name"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/model_airuike"
+                        android:textSize="16sp"
+                        android:textColor="@color/text_primary"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvModel2Status"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/model_not_downloaded"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_secondary" />
+                </LinearLayout>
+
+                <!-- Download status indicator -->
+                <ImageView
+                    android:id="@+id/ivModel2Status"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/bg_status_not_downloaded"
+                    android:contentDescription="@string/model_not_downloaded" />
+            </LinearLayout>
+
+            <!-- Debug switch (less prominent) -->
+            <LinearLayout
+                android:id="@+id/layoutDebug"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingVertical="8dp"
+                android:visibility="gone"
+                android:layout_marginBottom="16dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/debug_message"
+                    android:textSize="13sp"
+                    android:textColor="@color/text_secondary" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchDebug"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+        </LinearLayout>
     </ScrollView>
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+    <!-- Bottom action area -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="32dp">
+
+        <TextView
+            android:id="@+id/tvSelectHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/select_model_hint"
+            android:textSize="12sp"
+            android:textColor="@color/text_hint"
+            android:gravity="center"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:id="@+id/btnPlay"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:background="@drawable/selector_btn_primary"
+            android:text="@string/play"
+            android:textColor="@color/text_on_primary"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+</LinearLayout>

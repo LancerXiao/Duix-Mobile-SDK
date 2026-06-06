@@ -7,6 +7,40 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="primary">#5a7bbe</color>
-    <color name="primary_99">#995a7bbe</color>
+
+    <!-- Modern primary palette -->
+    <color name="primary">#6C63FF</color>
+    <color name="primary_dark">#5A52D5</color>
+    <color name="primary_light">#8B83FF</color>
+    <color name="primary_99">#996C63FF</color>
+
+    <!-- Accent -->
+    <color name="accent">#FF6588</color>
+    <color name="accent_light">#FF8FA7</color>
+
+    <!-- Backgrounds -->
+    <color name="bg_main">#F5F6FA</color>
+    <color name="bg_card">#FFFFFF</color>
+    <color name="bg_card_selected">#EEEDFF</color>
+    <color name="bg_header_gradient_start">#6C63FF</color>
+    <color name="bg_header_gradient_end">#8B83FF</color>
+
+    <!-- Text -->
+    <color name="text_primary">#1A1A2E</color>
+    <color name="text_secondary">#6B7280</color>
+    <color name="text_hint">#9CA3AF</color>
+    <color name="text_on_primary">#FFFFFF</color>
+
+    <!-- Status -->
+    <color name="status_downloaded">#22C55E</color>
+    <color name="status_not_downloaded">#E5E7EB</color>
+    <color name="status_error">#EF4444</color>
+
+    <!-- Divider / Border -->
+    <color name="divider">#E5E7EB</color>
+    <color name="card_shadow">#1A000000</color>
+
+    <!-- Legacy compat -->
+    <color name="primary_old">#5a7bbe</color>
+    <color name="primary_99_old">#995a7bbe</color>
 </resources>
