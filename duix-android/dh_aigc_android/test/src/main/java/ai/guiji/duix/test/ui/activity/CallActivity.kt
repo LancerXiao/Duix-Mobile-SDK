@@ -172,44 +172,38 @@ class CallActivity : BaseActivity() {
                     runOnUiThread {
                         Log.e(TAG, "CALLBACK_EVENT_INIT_ERROR: $msg")
                         // 显示详细的错误信息帮助诊断
-                        val diagnosticInfo = buildString {
-                            append("初始化失败: $msg\n\n")
-                            append("模型URL: $modelUrl\n\n")
-                            // 列出模型目录内容
-                            try {
-                                val duixDir = mContext.getExternalFilesDir("duix")
-                                append("duix目录: ${duixDir?.absolutePath}\n")
-                                val modelDir = File(duixDir, "model")
-                                if (modelDir.exists()) {
-                                    append("model目录内容:\n")
-                                    modelDir.list()?.forEach { append("  $it\n") }
-                                    // 检查gj_dh_res
-                                    val baseDir = File(modelDir, "gj_dh_res")
-                                    if (baseDir.exists()) {
-                                        append("gj_dh_res内容:\n")
-                                        baseDir.list()?.take(10)?.forEach { append("  $it\n") }
-                                    }
-                                    // 检查模型目录
-                                    val dirName = if (modelUrl.startsWith("http")) {
-                                        modelUrl.substringAfterLast("/").removeSuffix(".zip")
-                                    } else modelUrl
-                                    val specificModelDir = File(modelDir, dirName)
-                                    if (specificModelDir.exists()) {
-                                        append("$dirName 内容:\n")
-                                        specificModelDir.list()?.take(10)?.forEach { append("  $it\n") }
-                                    }
-                                    // 检查tmp标记
-                                    val tmpDir = File(modelDir, "tmp")
-                                    if (tmpDir.exists()) {
-                                        append("tmp标记:\n")
-                                        tmpDir.list()?.forEach { append("  $it\n") }
-                                    }
+                        try {
+                            val duixDir = mContext.getExternalFilesDir("duix")
+                            val modelDir = java.io.File(duixDir, "model")
+                            val dirName = if (modelUrl.startsWith("http")) {
+                                modelUrl.substringAfterLast("/").removeSuffix(".zip")
+                            } else modelUrl
+                            val baseDir = java.io.File(modelDir, "gj_dh_res")
+                            val specificModelDir = java.io.File(modelDir, dirName)
+                            val tmpDir = java.io.File(modelDir, "tmp")
+                            val baseTag = java.io.File(tmpDir, "gj_dh_res")
+                            val modelTag = java.io.File(tmpDir, dirName)
+
+                            val diagnosticInfo = StringBuilder().apply {
+                                append("初始化失败: $msg\n")
+                                append("模型URL: $modelUrl\n")
+                                append("dirName: $dirName\n")
+                                append("duix目录存在: ${duixDir?.exists()}\n")
+                                append("model目录存在: ${modelDir.exists()}\n")
+                                append("gj_dh_res目录存在: ${baseDir.exists()}\n")
+                                append("gj_dh_res标记存在: ${baseTag.exists()}\n")
+                                append("${dirName}目录存在: ${specificModelDir.exists()}\n")
+                                append("${dirName}标记存在: ${modelTag.exists()}\n")
+                                if (specificModelDir.exists()) {
+                                    val files = specificModelDir.list()
+                                    append("${dirName}文件数: ${files?.size ?: 0}\n")
+                                    files?.take(10)?.forEach { name -> append("  $name\n") }
                                 }
-                            } catch (e: Exception) {
-                                append("诊断异常: ${e.message}")
-                            }
+                            }.toString()
+                            Log.e(TAG, diagnosticInfo)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "诊断异常: ${e.message}")
                         }
-                        Log.e(TAG, diagnosticInfo)
                         binding.tvStatus.text = "初始化失败: $msg"
                         Toast.makeText(mContext, "初始化失败，请查看状态栏", Toast.LENGTH_LONG).show()
                     }
