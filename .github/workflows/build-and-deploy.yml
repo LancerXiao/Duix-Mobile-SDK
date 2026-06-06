@@ -21,6 +21,12 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install CMake and NDK
+        run: |
+          yes | sdkmanager --install "cmake;3.18.1"
+          yes | sdkmanager --install "ndk;25.2.9519653"
+          yes | sdkmanager --licenses
+
       - name: Decode keystore
         working-directory: duix-android/dh_aigc_android
         run: |
