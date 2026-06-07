@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 品牌色径向渐变（中心亮、边缘暗）——用于麦克风按钮、消息气泡等需要"光感"的元素 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <gradient
+        android:type="radial"
+        android:gradientRadius="80"
+        android:startColor="#FF7B73FF"
+        android:endColor="#FF4A40C7" />
+</shape>

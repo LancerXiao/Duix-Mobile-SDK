@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 录制中麦克风径向渐变（中心亮红，边缘暗红） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <gradient
+        android:type="radial"
+        android:gradientRadius="80"
+        android:startColor="#FFFF6B6B"
+        android:endColor="#FFD32F2F" />
+</shape>

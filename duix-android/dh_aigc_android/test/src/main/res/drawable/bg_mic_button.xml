@@ -1,5 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="oval">
-    <solid android:color="#CC5a7bbe" />
-</shape>
+<!-- 麦克风按钮：品牌色径向渐变（带阴影视觉重量） -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 外圈阴影层（深紫） -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#33000000" />
+        </shape>
+    </item>
+    <!-- 主体品牌渐变 -->
+    <item
+        android:left="1dp"
+        android:right="1dp"
+        android:top="1dp"
+        android:bottom="2dp">
+        <shape android:shape="oval">
+            <gradient
+                android:type="radial"
+                android:gradientRadius="80"
+                android:startColor="#FF8B83FF"
+                android:endColor="#FF5A52D5" />
+        </shape>
+    </item>
+</layer-list>
