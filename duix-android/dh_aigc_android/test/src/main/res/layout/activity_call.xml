@@ -143,7 +143,26 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- AI Response chat bubble -->
+    <!-- AI Response chat bubble - Phase 2.2 改为 RecyclerView 多轮历史 -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/messagesList"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:orientation="vertical"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="12dp"
+        android:background="@drawable/bg_chat_bubble"
+        android:padding="8dp"
+        android:visibility="visible"
+        android:maxHeight="320dp"
+        app:layout_constraintHeight_max="320dp"
+        app:layout_constraintBottom_toTopOf="@+id/bottomPanel"
+        app:layout_constraintTop_toBottomOf="@+id/tvStatus"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- 兼容旧引用：保留 aiResponseBubble 但设为 GONE（Phase 2.2 后续清理） -->
     <LinearLayout
         android:id="@+id/aiResponseBubble"
         android:layout_width="match_parent"

@@ -15,6 +15,8 @@ import ai.guiji.duix.test.service.HybridAsrService
 import ai.guiji.duix.test.service.LlmService
 import ai.guiji.duix.test.service.Mp3ToPcmConverter
 import ai.guiji.duix.test.service.QwenTtsService
+import ai.guiji.duix.test.ui.MessageData
+import ai.guiji.duix.test.ui.adapter.MessageAdapter
 import ai.guiji.duix.test.util.PermissionManager
 import android.Manifest
 import android.annotation.SuppressLint
@@ -100,6 +102,9 @@ class CallActivity : BaseActivity() {
     // 切换入口将在 Phase 1.4 接通时增加（如长按 toolbar 标题 5 次进调试模式）
     private enum class MicInteractionMode { PRESS_ONCE, LONG_PRESS }
     private var micInteractionMode = MicInteractionMode.LONG_PRESS
+
+    // [Phase 2.2] 多轮消息历史列表
+    private lateinit var messageAdapter: MessageAdapter
 
     // 状态管理
     private var currentState = State.IDLE
@@ -219,6 +224,15 @@ class CallActivity : BaseActivity() {
         binding.glTextureView.setEGLContextClientVersion(GL_CONTEXT_VERSION)
         binding.glTextureView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
         binding.glTextureView.isOpaque = false
+
+        // [Phase 2.2] 初始化消息历史 RecyclerView
+        messageAdapter = MessageAdapter()
+        binding.messagesList.apply {
+            layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this@CallActivity).apply {
+                stackFromEnd = true  // 最新的消息在底部
+            }
+            adapter = messageAdapter
+        }
 
         // 返回按钮
         binding.btnBack.setOnClickListener {
@@ -743,6 +757,10 @@ class CallActivity : BaseActivity() {
         updateStatus("思考中")
         updateUI()
 
+        // [Phase 2.2] 添加用户消息到历史
+        messageAdapter.append(MessageData(MessageData.Role.USER, text))
+        scrollMessagesToBottom()
+
         showAiBubble(thinking = true, text = "")
 
         val fullResponse = StringBuilder()
@@ -1225,8 +1243,23 @@ class CallActivity : BaseActivity() {
     }
 
     private fun showAiBubble(thinking: Boolean, text: String) {
+        // [Phase 2.2] 改为操作 messageAdapter
+        if (thinking) {
+            // 开始思考：插入一条"思考中"占位消息
+            messageAdapter.append(MessageData(MessageData.Role.AI, "", isThinking = true))
+        } else {
+            // 更新最后一条 AI 消息的文本
+            val msgs = messageAdapter.snapshot()
+            if (msgs.isNotEmpty() && msgs.last().role == MessageData.Role.AI) {
+                messageAdapter.updateLast(MessageData(MessageData.Role.AI, text, isThinking = false))
+            } else {
+                messageAdapter.append(MessageData(MessageData.Role.AI, text))
+            }
+        }
+        scrollMessagesToBottom()
+
+        // 兼容旧路径：保留原 aiResponseBubble 的可见性设置（虽然已 GONE）
         cancelHideBubble()
-        binding.aiResponseBubble.visibility = View.VISIBLE
         try {
             binding.aiResponseBubble.startAnimation(
                 AnimationUtils.loadAnimation(this, R.anim.fade_in_up)
@@ -1234,13 +1267,20 @@ class CallActivity : BaseActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "加载气泡动画失败", e)
         }
-
         binding.thinkingIndicator.visibility = if (thinking) View.VISIBLE else View.GONE
         binding.tvAiResponse.text = text
         binding.tvAiResponse.visibility = if (text.isNotEmpty()) View.VISIBLE else View.GONE
+    }
 
-        binding.aiResponseScroll.post {
-            binding.aiResponseScroll.fullScroll(View.FOCUS_DOWN)
+    /**
+     * 滚动消息列表到底部（Phase 2.2）
+     */
+    private fun scrollMessagesToBottom() {
+        binding.messagesList.post {
+            val count = messageAdapter.itemCount
+            if (count > 0) {
+                binding.messagesList.smoothScrollToPosition(count - 1)
+            }
         }
     }
 
