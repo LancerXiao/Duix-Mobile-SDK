@@ -232,7 +232,7 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
-            android:layout_marginBottom="8dp"
+            android:layout_marginBottom="4dp"
             android:visibility="gone">
 
             <ImageView
@@ -252,6 +252,18 @@
                 android:textSize="12sp" />
 
         </LinearLayout>
+
+        <!-- ASR Fallback 状态行 (Phase 1.3 骨架) - 显示最近一次 ASR 错误的 fallback 决策 -->
+        <TextView
+            android:id="@+id/tvFallbackStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginBottom="4dp"
+            android:text=""
+            android:textColor="#99FFFFFF"
+            android:textSize="11sp"
+            android:visibility="gone" />
 
         <!-- Chat input row -->
         <LinearLayout

@@ -9,6 +9,7 @@ import ai.guiji.duix.test.databinding.ActivityCallBinding
 import ai.guiji.duix.test.service.AndroidAsrService
 import ai.guiji.duix.test.service.AndroidTtsService
 import ai.guiji.duix.test.service.AiConfig
+import ai.guiji.duix.test.service.AsrFallbackManager
 import ai.guiji.duix.test.service.EdgeTtsService
 import ai.guiji.duix.test.service.HybridAsrService
 import ai.guiji.duix.test.service.LlmService
@@ -85,6 +86,11 @@ class CallActivity : BaseActivity() {
     private enum class AsrEngine { DASHSCOPE, ANDROID, DISABLED }
     private val asrEngineCycle = listOf(AsrEngine.DASHSCOPE, AsrEngine.ANDROID, AsrEngine.DISABLED)
     private var currentAsrEngine = AsrEngine.DASHSCOPE
+
+    // ASR Fallback 决策器 (Phase 1.3 骨架) - 纯逻辑决策，不接通 HybridAsrService
+    // 等 Phase 1.1 [DIAG] 反馈出根因后再接通具体分支
+    private val asrFallbackManager = AsrFallbackManager()
+    private var lastFallbackAction: AsrFallbackManager.Action? = null
 
     // 状态管理
     private var currentState = State.IDLE
@@ -403,6 +409,8 @@ class CallActivity : BaseActivity() {
             loadTtsEnginePreference()
             // 恢复上次保存的 ASR 引擎选择 (Phase 1.2 骨架)
             loadAsrEnginePreference()
+            // 清空 fallback 状态显示 (Phase 1.3 骨架)
+            clearFallbackStatus()
             // 初始化完成后自动开始监听，参考 Call Annie 即时响应设计
             scheduleAutoListen()
         }
@@ -1273,6 +1281,31 @@ class CallActivity : BaseActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "加载 ASR 引擎偏好失败", e)
         }
+    }
+
+    /**
+     * 清空 fallback 状态显示（Phase 1.3 骨架）
+     * 在 initOk 阶段调用，数字人就绪时不显示历史 fallback 状态
+     */
+    private fun clearFallbackStatus() {
+        lastFallbackAction = null
+        binding.tvFallbackStatus.visibility = View.GONE
+        binding.tvFallbackStatus.text = ""
+    }
+
+    /**
+     * 更新 fallback 状态显示（Phase 1.3 骨架）
+     * 当前**不接通**到 HybridAsrService.onError（避免破坏 Phase 1.1 诊断）
+     * 等根因明确后再在 onError 回调里调用：
+     *   val action = asrFallbackManager.decide(ctx)
+     *   updateFallbackStatus(action)
+     */
+    private fun updateFallbackStatus(action: AsrFallbackManager.Action) {
+        lastFallbackAction = action
+        val msg = asrFallbackManager.getUserMessage(action)
+        binding.tvFallbackStatus.text = "[ASR] $msg"
+        binding.tvFallbackStatus.visibility = View.VISIBLE
+        Log.i(TAG, "[DIAG] updateFallbackStatus: action=$action, msg='$msg'")
     }
 
     @Suppress("DEPRECATION")
