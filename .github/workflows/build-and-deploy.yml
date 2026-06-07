@@ -46,6 +46,29 @@ jobs:
         working-directory: duix-android/dh_aigc_android
         run: chmod +x gradlew
 
+      - name: Bump version
+        id: bump_version
+        working-directory: duix-android/dh_aigc_android
+        run: |
+          # Read current version
+          CURRENT_CODE=$(grep "versionCode" test/build.gradle | head -1 | sed 's/.*versionCode *\([0-9]*\).*/\1/')
+          NEW_CODE=$((CURRENT_CODE + 1))
+
+          # Get current date for version name
+          DATE_SUFFIX=$(date -u +%Y%m%d)
+          CURRENT_NAME=$(grep "versionName" test/build.gradle | head -1 | sed "s/.*versionName *'\([^']*\)'.*/\1/")
+          # Extract base version (e.g., "4.1" from "4.1.1")
+          BASE_VERSION=$(echo "$CURRENT_NAME" | sed 's/\([0-9]*\.[0-9]*\).*/\1/')
+          NEW_NAME="${BASE_VERSION}.${NEW_CODE}"
+
+          # Update build.gradle
+          sed -i "s/versionCode ${CURRENT_CODE}/versionCode ${NEW_CODE}/" test/build.gradle
+          sed -i "s/versionName '${CURRENT_NAME}'/versionName '${NEW_NAME}'/" test/build.gradle
+
+          echo "Version: ${CURRENT_NAME} (${CURRENT_CODE}) -> ${NEW_NAME} (${NEW_CODE})"
+          echo "code=${NEW_CODE}" >> $GITHUB_OUTPUT
+          echo "name=${NEW_NAME}" >> $GITHUB_OUTPUT
+
       - name: Build Release APK
         working-directory: duix-android/dh_aigc_android
         run: ./gradlew :test:assembleRelease --no-daemon
@@ -54,8 +77,8 @@ jobs:
         id: version
         working-directory: duix-android/dh_aigc_android
         run: |
-          VERSION_NAME=$(grep "versionName" test/build.gradle | head -1 | sed "s/.*versionName *'\([^']*\)'.*/\1/")
-          VERSION_CODE=$(grep "versionCode" test/build.gradle | head -1 | sed 's/.*versionCode *\([0-9]*\).*/\1/')
+          VERSION_NAME="${{ steps.bump_version.outputs.name }}"
+          VERSION_CODE="${{ steps.bump_version.outputs.code }}"
           echo "name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "code=$VERSION_CODE" >> $GITHUB_OUTPUT
           APK_FILE=$(find test/build/outputs/apk/release -name '*.apk' | head -1)

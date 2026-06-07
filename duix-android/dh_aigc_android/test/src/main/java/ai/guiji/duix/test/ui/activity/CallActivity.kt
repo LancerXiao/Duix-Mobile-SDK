@@ -237,7 +237,8 @@ class CallActivity : BaseActivity() {
                 }
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_ERROR -> {
                     runOnUiThread {
-                        Log.e(TAG, "AUDIO_PLAY_ERROR: 数字人播放出错")
+                        Log.e(TAG, "AUDIO_PLAY_ERROR: 数字人播放出错: $msg")
+                        updateStatus("播放出错: $msg")
                         currentState = State.IDLE
                         updateUI()
                         scheduleAutoListen()
@@ -458,6 +459,7 @@ class CallActivity : BaseActivity() {
                                 runOnUiThread {
                                     // MP3转换失败，尝试Android TTS
                                     Log.i(TAG, "MP3转换失败，切换到Android TTS")
+                                    updateStatus("MP3转换失败: $error")
                                     currentTtsEngine = TtsEngine.ANDROID_TTS
                                     synthesizeWithAndroidTts(text, currentDuix)
                                 }
@@ -483,11 +485,13 @@ class CallActivity : BaseActivity() {
                 // 连续失败2次以上，自动切换到Android TTS
                 if (edgeTtsFailCount >= 2) {
                     Log.i(TAG, "Edge TTS 连续失败 $edgeTtsFailCount 次，切换到Android TTS")
+                    updateStatus("Edge TTS失败: $error，切换到Android TTS")
                     currentTtsEngine = TtsEngine.ANDROID_TTS
                     synthesizeWithAndroidTts(text, currentDuix)
                 } else {
                     // 第一次失败，尝试Android TTS作为本次的备选
                     Log.i(TAG, "Edge TTS 失败，尝试Android TTS")
+                    updateStatus("Edge TTS失败: $error，尝试Android TTS")
                     synthesizeWithAndroidTts(text, currentDuix)
                 }
             }
@@ -538,7 +542,7 @@ class CallActivity : BaseActivity() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Android TTS PCM推送异常", e)
                         runOnUiThread {
-                            updateStatus("语音播放失败，文本已显示")
+                            updateStatus("语音播放失败: ${e.message}")
                             currentState = State.IDLE
                             updateUI()
                             scheduleAutoListen()
@@ -554,7 +558,7 @@ class CallActivity : BaseActivity() {
             override fun onError(error: String) {
                 Log.e(TAG, "Android TTS 合成失败: $error")
                 runOnUiThread {
-                    updateStatus("语音合成失败，文本已显示")
+                    updateStatus("Android TTS失败: $error")
                     currentState = State.IDLE
                     updateUI()
                     scheduleAutoListen()

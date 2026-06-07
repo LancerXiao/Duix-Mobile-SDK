@@ -163,6 +163,16 @@
                     android:layout_height="24dp"
                     android:src="@drawable/bg_status_not_downloaded"
                     android:contentDescription="@string/model_not_downloaded" />
+
+                <!-- Selection checkmark -->
+                <ImageView
+                    android:id="@+id/ivModel1Check"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="8dp"
+                    android:src="@android:drawable/checkbox_on_background"
+                    android:contentDescription="已选中"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- Model card: 艾瑞克 -->
@@ -228,6 +238,16 @@
                     android:layout_height="24dp"
                     android:src="@drawable/bg_status_not_downloaded"
                     android:contentDescription="@string/model_not_downloaded" />
+
+                <!-- Selection checkmark -->
+                <ImageView
+                    android:id="@+id/ivModel2Check"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="8dp"
+                    android:src="@android:drawable/checkbox_on_background"
+                    android:contentDescription="已选中"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- Debug switch (less prominent) -->

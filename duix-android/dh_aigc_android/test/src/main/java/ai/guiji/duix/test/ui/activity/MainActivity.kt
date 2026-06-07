@@ -89,6 +89,10 @@ class MainActivity : BaseActivity() {
         else
             resources.getDrawable(R.drawable.bg_card_border_16, null)
 
+        // Update checkmarks
+        binding.ivModel1Check.visibility = if (index == 0) View.VISIBLE else View.GONE
+        binding.ivModel2Check.visibility = if (index == 1) View.VISIBLE else View.GONE
+
         // Update hint text
         binding.tvSelectHint.visibility = View.GONE
     }
