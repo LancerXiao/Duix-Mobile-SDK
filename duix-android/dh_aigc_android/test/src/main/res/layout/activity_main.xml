@@ -178,7 +178,7 @@
                     android:layout_width="24dp"
                     android:layout_height="24dp"
                     android:layout_marginStart="8dp"
-                    android:src="@android:drawable/checkbox_on_background"
+                    android:src="@drawable/ic_checkmark"
                     android:contentDescription="已选中"
                     android:visibility="gone" />
             </LinearLayout>
@@ -261,7 +261,7 @@
                     android:layout_width="24dp"
                     android:layout_height="24dp"
                     android:layout_marginStart="8dp"
-                    android:src="@android:drawable/checkbox_on_background"
+                    android:src="@drawable/ic_checkmark"
                     android:contentDescription="已选中"
                     android:visibility="gone" />
             </LinearLayout>

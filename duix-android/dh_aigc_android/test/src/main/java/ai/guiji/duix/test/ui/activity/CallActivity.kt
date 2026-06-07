@@ -32,7 +32,7 @@ class CallActivity : BaseActivity() {
 
     companion object {
         const val GL_CONTEXT_VERSION = 2
-        private const val AUTO_LISTEN_DELAY_MS = 1500L
+        private const val AUTO_LISTEN_DELAY_MS = 1200L
     }
 
     enum class State {
@@ -47,11 +47,11 @@ class CallActivity : BaseActivity() {
     private var mDUIXRender: DUIXRenderer? = null
     private var mModelInfo: ModelInfo? = null
 
-    // AI服务
+    // AI服务 - 使用 lateinit 避免在 mContext 赋值前初始化导致闪退
     private val llmService = LlmService()
     private lateinit var asrService: AndroidAsrService
     private val edgeTtsService = EdgeTtsService()
-    private val androidTtsService = AndroidTtsService(mContext)
+    private lateinit var androidTtsService: AndroidTtsService
     private lateinit var mp3ToPcmConverter: Mp3ToPcmConverter
 
     // TTS引擎选择
@@ -86,15 +86,15 @@ class CallActivity : BaseActivity() {
         modelUrl = intent.getStringExtra("modelUrl") ?: ""
         debug = intent.getBooleanExtra("debug", false)
 
-        // 初始化ASR
+        // 在 super.onCreate() 之后 mContext 已赋值，安全初始化依赖 Context 的服务
         asrService = AndroidAsrService(mContext)
         asrService.create()
-
-        // 初始化MP3转PCM转换器
         mp3ToPcmConverter = Mp3ToPcmConverter(mContext)
-
-        // 初始化Android原生TTS（作为Edge TTS的备选）
+        androidTtsService = AndroidTtsService(mContext)
         androidTtsService.init()
+
+        // 初始化时显示全屏 loading
+        showLoading("正在加载...")
 
         Glide.with(mContext).load("file:///android_asset/bg/bg1.png").into(binding.ivBg)
 
@@ -167,12 +167,22 @@ class CallActivity : BaseActivity() {
             }
         }
 
+        // 重试按钮
+        binding.btnRetry.setOnClickListener {
+            retryInit()
+        }
+
         // 初始化渲染器
         mDUIXRender = DUIXRenderer(mContext, binding.glTextureView)
         binding.glTextureView.setRenderer(mDUIXRender)
         binding.glTextureView.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
 
         // 初始化DUIX
+        initDuiX()
+    }
+
+    private fun initDuiX() {
+        showLoading("正在加载数字人...")
         duix = DUIX(mContext, modelUrl, mDUIXRender) { event, msg, info ->
             when (event) {
                 Constant.CALLBACK_EVENT_INIT_READY -> {
@@ -184,7 +194,6 @@ class CallActivity : BaseActivity() {
                 Constant.CALLBACK_EVENT_INIT_ERROR -> {
                     runOnUiThread {
                         Log.e(TAG, "CALLBACK_EVENT_INIT_ERROR: $msg")
-                        // 显示详细的错误信息帮助诊断
                         try {
                             val duixDir = mContext.getExternalFilesDir("duix")
                             val modelDir = java.io.File(duixDir, "model")
@@ -217,8 +226,7 @@ class CallActivity : BaseActivity() {
                         } catch (e: Exception) {
                             Log.e(TAG, "诊断异常: ${e.message}")
                         }
-                        binding.tvStatus.text = "初始化失败: $msg"
-                        Toast.makeText(mContext, "初始化失败，请查看状态栏", Toast.LENGTH_LONG).show()
+                        showLoadingError("初始化失败", msg ?: "未知错误")
                     }
                 }
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_START -> {
@@ -233,14 +241,13 @@ class CallActivity : BaseActivity() {
                         Log.i(TAG, "AUDIO_PLAY_END: 数字人播放完成")
                         currentState = State.IDLE
                         updateUI()
-                        // 自动回到监听状态
                         scheduleAutoListen()
                     }
                 }
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_ERROR -> {
                     runOnUiThread {
                         Log.e(TAG, "AUDIO_PLAY_ERROR: 数字人播放出错: $msg")
-                        updateStatus("播放出错: $msg")
+                        updateStatus("播放出错")
                         currentState = State.IDLE
                         updateUI()
                         scheduleAutoListen()
@@ -253,13 +260,55 @@ class CallActivity : BaseActivity() {
         duix?.init()
     }
 
+    private fun retryInit() {
+        duix?.release()
+        duix = null
+        isDuiXReady = false
+        initDuiX()
+    }
+
     private fun initOk() {
         runOnUiThread {
+            hideLoading()
             enableControls(true)
             currentState = State.IDLE
-            updateStatus("就绪 - 按住麦克风说话")
+            updateStatus("就绪")
             updateUI()
-            showToast("数字人已就绪，当前TTS: ${if (currentTtsEngine == TtsEngine.EDGE_TTS) "Edge TTS" else "Android TTS"}")
+            showToast("数字人已就绪")
+            // 初始化完成后自动开始监听，参考 Call Annie 即时响应设计
+            scheduleAutoListen()
+        }
+    }
+
+    // --- Loading 覆盖层 ---
+
+    private fun showLoading(status: String) {
+        binding.loadingOverlay.visibility = View.VISIBLE
+        binding.loadingSpinner.visibility = View.VISIBLE
+        binding.tvLoadingStatus.text = status
+        binding.tvLoadingDetail.visibility = View.GONE
+        binding.btnRetry.visibility = View.GONE
+    }
+
+    private fun showLoadingError(title: String, detail: String) {
+        binding.loadingOverlay.visibility = View.VISIBLE
+        binding.loadingSpinner.visibility = View.GONE
+        binding.tvLoadingStatus.text = title
+        binding.tvLoadingDetail.text = detail
+        binding.tvLoadingDetail.visibility = View.VISIBLE
+        binding.btnRetry.visibility = View.VISIBLE
+    }
+
+    private fun hideLoading() {
+        if (binding.loadingOverlay.visibility == View.VISIBLE) {
+            binding.loadingOverlay.animate()
+                .alpha(0f)
+                .setDuration(500)
+                .withEndAction {
+                    binding.loadingOverlay.visibility = View.GONE
+                    binding.loadingOverlay.alpha = 1f
+                }
+                .start()
         }
     }
 
@@ -267,7 +316,6 @@ class CallActivity : BaseActivity() {
         performHapticFeedback()
         when (currentState) {
             State.SPEAKING -> {
-                // 点击时正在说话 -> 中断
                 stopSpeaking()
             }
             State.IDLE -> {
@@ -299,7 +347,7 @@ class CallActivity : BaseActivity() {
         if (get && code == 1) {
             doStartListening()
         } else {
-            Toast.makeText(mContext, R.string.need_permission_continue, Toast.LENGTH_SHORT).show()
+            showToast("需要麦克风权限才能对话")
         }
     }
 
@@ -307,99 +355,114 @@ class CallActivity : BaseActivity() {
     private fun doStartListening() {
         if (currentState == State.LISTENING) return
         currentState = State.LISTENING
-        updateStatus("正在聆听...")
+        updateStatus("聆听中...")
         updateUI()
-        showToast("开始聆听...")
 
-        // 使用Android原生SpeechRecognizer
-        asrService.startListening(object : AndroidAsrService.Callback {
-            override fun onReady() {
-                runOnUiThread { updateStatus("正在聆听...请说话") }
-            }
+        try {
+            asrService.startListening(object : AndroidAsrService.Callback {
+                override fun onReady() {
+                    runOnUiThread { updateStatus("请说话") }
+                }
 
-            override fun onPartialResult(text: String) {
-                runOnUiThread { updateStatus("听到: $text") }
-            }
+                override fun onPartialResult(text: String) {
+                    runOnUiThread { updateStatus("听到: $text") }
+                }
 
-            override fun onFinalResult(text: String) {
-                runOnUiThread {
-                    if (text.isNotEmpty()) {
-                        updateStatus("识别: $text")
-                        sendToLlm(text)
-                    } else {
+                override fun onFinalResult(text: String) {
+                    runOnUiThread {
+                        if (text.isNotEmpty()) {
+                            updateStatus("识别完成")
+                            sendToLlm(text)
+                        } else {
+                            currentState = State.IDLE
+                            updateStatus("未检测到语音")
+                            updateUI()
+                            scheduleAutoListen()
+                        }
+                    }
+                }
+
+                override fun onError(error: String) {
+                    runOnUiThread {
                         currentState = State.IDLE
-                        updateStatus("未检测到语音，请重试")
+                        updateStatus("识别出错")
                         updateUI()
-                        scheduleAutoListen()
+                        if (error.contains("No speech") || error.contains("No match")) {
+                            scheduleAutoListen()
+                        }
                     }
                 }
-            }
-
-            override fun onError(error: String) {
-                runOnUiThread {
-                    currentState = State.IDLE
-                    updateStatus("语音识别出错: $error")
-                    updateUI()
-                    // 自动重试
-                    if (error.contains("No speech") || error.contains("No match")) {
-                        scheduleAutoListen()
-                    }
-                }
-            }
-        })
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "启动语音识别异常", e)
+            currentState = State.IDLE
+            updateStatus("启动识别失败")
+            updateUI()
+            scheduleAutoListen()
+        }
     }
 
     private fun stopListening() {
         if (currentState != State.LISTENING) return
-        asrService.stopListening()
-        // 状态会在 onFinalResult 或 onError 中更新
+        try {
+            asrService.stopListening()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止语音识别异常", e)
+        }
     }
 
     private fun sendToLlm(text: String) {
         if (currentState == State.THINKING) return
         currentState = State.THINKING
-        updateStatus("思考中...")
+        updateStatus("思考中")
         updateUI()
 
-        // 显示气泡和思考动画
         showAiBubble(thinking = true, text = "")
 
         val fullResponse = StringBuilder()
 
-        llmService.chat(text, object : LlmService.Callback {
-            override fun onToken(token: String) {
-                fullResponse.append(token)
-                runOnUiThread {
-                    // 逐步显示文本
-                    showAiBubble(thinking = false, text = fullResponse.toString())
-                    updateStatus("AI回复中...")
+        try {
+            llmService.chat(text, object : LlmService.Callback {
+                override fun onToken(token: String) {
+                    fullResponse.append(token)
+                    runOnUiThread {
+                        showAiBubble(thinking = false, text = fullResponse.toString())
+                        updateStatus("回复中")
+                    }
                 }
-            }
 
-            override fun onComplete(fullText: String) {
-                runOnUiThread {
-                    showAiBubble(thinking = false, text = fullText)
-                    if (fullText.isNotEmpty()) {
-                        synthesizeAndPlay(fullText)
-                    } else {
+                override fun onComplete(fullText: String) {
+                    runOnUiThread {
+                        showAiBubble(thinking = false, text = fullText)
+                        if (fullText.isNotEmpty()) {
+                            synthesizeAndPlay(fullText)
+                        } else {
+                            currentState = State.IDLE
+                            updateStatus("就绪")
+                            updateUI()
+                            scheduleAutoListen()
+                        }
+                    }
+                }
+
+                override fun onError(error: String) {
+                    runOnUiThread {
                         currentState = State.IDLE
-                        updateStatus("就绪 - 按住麦克风说话")
+                        updateStatus("请求出错")
+                        hideAiBubble()
                         updateUI()
                         scheduleAutoListen()
                     }
                 }
-            }
-
-            override fun onError(error: String) {
-                runOnUiThread {
-                    currentState = State.IDLE
-                    updateStatus("LLM错误: $error")
-                    hideAiBubble()
-                    updateUI()
-                    scheduleAutoListen()
-                }
-            }
-        })
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "LLM请求异常", e)
+            currentState = State.IDLE
+            updateStatus("请求出错")
+            hideAiBubble()
+            updateUI()
+            scheduleAutoListen()
+        }
     }
 
     /**
@@ -417,12 +480,10 @@ class CallActivity : BaseActivity() {
         }
 
         if (currentTtsEngine == TtsEngine.EDGE_TTS) {
-            updateStatus("语音合成中(Edge TTS)...")
-            showToast("正在连接Edge TTS...")
+            updateStatus("合成语音中")
             synthesizeWithEdgeTts(text, currentDuix)
         } else {
-            updateStatus("语音合成中(Android TTS)...")
-            showToast("正在使用Android TTS...")
+            updateStatus("合成语音中")
             synthesizeWithAndroidTts(text, currentDuix)
         }
     }
@@ -432,83 +493,97 @@ class CallActivity : BaseActivity() {
      */
     private fun synthesizeWithEdgeTts(text: String, currentDuix: DUIX) {
         Log.i(TAG, "尝试 Edge TTS 合成: ${text.take(30)}...")
-        edgeTtsService.synthesize(text, EdgeTtsService.VOICE_XIAOXIAO, object : EdgeTtsService.Callback {
-            override fun onAudioData(mp3Data: ByteArray) {
-                Log.i(TAG, "Edge TTS 返回音频数据: ${mp3Data.size} bytes")
-                // Edge TTS 返回完整 MP3 数据，转换为 PCM 推送给数字人
-                Thread {
-                    try {
-                        Log.i(TAG, "调用 startPush()")
-                        currentDuix.startPush()
-                        var totalPcmBytes = 0L
-                        var pcmChunkCount = 0
-                        mp3ToPcmConverter.convert(mp3Data, object : Mp3ToPcmConverter.Callback {
-                            override fun onPcmData(pcmData: ByteArray) {
-                                pcmChunkCount++
-                                totalPcmBytes += pcmData.size
-                                Log.i(TAG, "pushPcm #$pcmChunkCount: ${pcmData.size} bytes (total: $totalPcmBytes)")
-                                currentDuix.pushPcm(pcmData)
-                            }
-
-                            override fun onComplete() {
-                                Log.i(TAG, "PCM转换完成: $pcmChunkCount chunks, $totalPcmBytes bytes, 调用 stopPush()")
-                                currentDuix.stopPush()
-                                edgeTtsFailCount = 0 // 成功则重置失败计数
-                                runOnUiThread {
-                                    updateStatus("数字人播放中...")
+        try {
+            edgeTtsService.synthesize(text, EdgeTtsService.VOICE_XIAOXIAO, object : EdgeTtsService.Callback {
+                override fun onAudioData(mp3Data: ByteArray) {
+                    Log.i(TAG, "Edge TTS 返回音频数据: ${mp3Data.size} bytes")
+                    Thread {
+                        try {
+                            Log.i(TAG, "调用 startPush()")
+                            currentDuix.startPush()
+                            var totalPcmBytes = 0L
+                            var pcmChunkCount = 0
+                            mp3ToPcmConverter.convert(mp3Data, object : Mp3ToPcmConverter.Callback {
+                                override fun onPcmData(pcmData: ByteArray) {
+                                    pcmChunkCount++
+                                    totalPcmBytes += pcmData.size
+                                    Log.i(TAG, "pushPcm #$pcmChunkCount: ${pcmData.size} bytes (total: $totalPcmBytes)")
+                                    try {
+                                        currentDuix.pushPcm(pcmData)
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "pushPcm异常", e)
+                                    }
                                 }
-                            }
 
-                            override fun onError(error: String) {
-                                Log.e(TAG, "MP3 to PCM conversion error: $error")
-                                currentDuix.stopPush()
-                                runOnUiThread {
-                                    // MP3转换失败，尝试Android TTS
-                                    Log.i(TAG, "MP3转换失败，切换到Android TTS")
-                                    updateStatus("MP3转换失败: $error")
-                                    currentTtsEngine = TtsEngine.ANDROID_TTS
-                                    updateUI()
-                                    showToast("MP3转换失败，切换到Android TTS")
-                                    synthesizeWithAndroidTts(text, currentDuix)
+                                override fun onComplete() {
+                                    Log.i(TAG, "PCM转换完成: $pcmChunkCount chunks, $totalPcmBytes bytes, 调用 stopPush()")
+                                    try {
+                                        currentDuix.stopPush()
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "stopPush异常", e)
+                                    }
+                                    edgeTtsFailCount = 0
+                                    runOnUiThread {
+                                        updateStatus("播放中")
+                                    }
                                 }
+
+                                override fun onError(error: String) {
+                                    Log.e(TAG, "MP3 to PCM conversion error: $error")
+                                    try {
+                                        currentDuix.stopPush()
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "stopPush异常", e)
+                                    }
+                                    runOnUiThread {
+                                        Log.i(TAG, "MP3转换失败，切换到Android TTS")
+                                        updateStatus("切换语音引擎")
+                                        currentTtsEngine = TtsEngine.ANDROID_TTS
+                                        updateUI()
+                                        synthesizeWithAndroidTts(text, currentDuix)
+                                    }
+                                }
+                            })
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Edge TTS PCM处理异常", e)
+                            runOnUiThread {
+                                currentTtsEngine = TtsEngine.ANDROID_TTS
+                                updateUI()
+                                synthesizeWithAndroidTts(text, currentDuix)
                             }
-                        })
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Edge TTS PCM处理异常", e)
+                        }
+                    }.start()
+                }
+
+                override fun onComplete() {
+                    Log.i(TAG, "Edge TTS 合成完成")
+                }
+
+                override fun onError(error: String) {
+                    Log.e(TAG, "Edge TTS 合成失败: $error")
+                    edgeTtsFailCount++
+                    if (edgeTtsFailCount >= 2) {
+                        Log.i(TAG, "Edge TTS 连续失败 $edgeTtsFailCount 次，切换到Android TTS")
                         runOnUiThread {
+                            updateStatus("切换语音引擎")
                             currentTtsEngine = TtsEngine.ANDROID_TTS
                             updateUI()
-                            showToast("Edge TTS异常，切换到Android TTS")
+                            synthesizeWithAndroidTts(text, currentDuix)
+                        }
+                    } else {
+                        runOnUiThread {
+                            updateStatus("切换语音引擎")
                             synthesizeWithAndroidTts(text, currentDuix)
                         }
                     }
-                }.start()
-            }
-
-            override fun onComplete() {
-                Log.i(TAG, "Edge TTS 合成完成")
-            }
-
-            override fun onError(error: String) {
-                Log.e(TAG, "Edge TTS 合成失败: $error")
-                edgeTtsFailCount++
-                // 连续失败2次以上，自动切换到Android TTS
-                if (edgeTtsFailCount >= 2) {
-                    Log.i(TAG, "Edge TTS 连续失败 $edgeTtsFailCount 次，切换到Android TTS")
-                    updateStatus("Edge TTS失败: $error，切换到Android TTS")
-                    currentTtsEngine = TtsEngine.ANDROID_TTS
-                    updateUI()
-                    showToast("Edge TTS连续失败，已切换到Android TTS")
-                    synthesizeWithAndroidTts(text, currentDuix)
-                } else {
-                    // 第一次失败，尝试Android TTS作为本次的备选
-                    Log.i(TAG, "Edge TTS 失败，尝试Android TTS")
-                    updateStatus("Edge TTS失败: $error，尝试Android TTS")
-                    showToast("Edge TTS失败，尝试Android TTS")
-                    synthesizeWithAndroidTts(text, currentDuix)
                 }
-            }
-        })
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "Edge TTS调用异常", e)
+            currentTtsEngine = TtsEngine.ANDROID_TTS
+            updateUI()
+            synthesizeWithAndroidTts(text, currentDuix)
+        }
     }
 
     /**
@@ -518,7 +593,7 @@ class CallActivity : BaseActivity() {
         if (!androidTtsService.isReady()) {
             Log.e(TAG, "Android TTS 未初始化，无法合成语音")
             runOnUiThread {
-                updateStatus("语音合成不可用，文本已显示")
+                updateStatus("语音不可用")
                 currentState = State.IDLE
                 updateUI()
                 scheduleAutoListen()
@@ -527,68 +602,96 @@ class CallActivity : BaseActivity() {
         }
 
         Log.i(TAG, "使用 Android TTS 合成: ${text.take(30)}...")
-        androidTtsService.synthesize(text, object : AndroidTtsService.Callback {
-            override fun onPcmData(pcmData: ByteArray) {
-                Log.i(TAG, "Android TTS 返回PCM数据: ${pcmData.size} bytes")
-                // 直接推送PCM数据给DUIX（已经是16kHz单声道16bit格式）
-                Thread {
-                    try {
-                        Log.i(TAG, "调用 startPush()")
-                        currentDuix.startPush()
+        try {
+            androidTtsService.synthesize(text, object : AndroidTtsService.Callback {
+                override fun onPcmData(pcmData: ByteArray) {
+                    Log.i(TAG, "Android TTS 返回PCM数据: ${pcmData.size} bytes")
+                    Thread {
+                        try {
+                            Log.i(TAG, "调用 startPush()")
+                            currentDuix.startPush()
 
-                        // 将PCM数据分块推送（每块1280字节 = 10ms）
-                        var offset = 0
-                        var chunkCount = 0
-                        while (offset < pcmData.size) {
-                            val chunkSize = minOf(1280, pcmData.size - offset)
-                            val chunk = pcmData.copyOfRange(offset, offset + chunkSize)
-                            currentDuix.pushPcm(chunk)
-                            chunkCount++
-                            offset += chunkSize
+                            var offset = 0
+                            var chunkCount = 0
+                            while (offset < pcmData.size) {
+                                val chunkSize = minOf(1280, pcmData.size - offset)
+                                val chunk = pcmData.copyOfRange(offset, offset + chunkSize)
+                                try {
+                                    currentDuix.pushPcm(chunk)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "pushPcm异常", e)
+                                    break
+                                }
+                                chunkCount++
+                                offset += chunkSize
+                            }
+
+                            Log.i(TAG, "PCM推送完成: $chunkCount chunks, ${pcmData.size} bytes, 调用 stopPush()")
+                            try {
+                                currentDuix.stopPush()
+                            } catch (e: Exception) {
+                                Log.e(TAG, "stopPush异常", e)
+                            }
+                            runOnUiThread {
+                                updateStatus("播放中")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Android TTS PCM推送异常", e)
+                            runOnUiThread {
+                                updateStatus("播放失败")
+                                currentState = State.IDLE
+                                updateUI()
+                                scheduleAutoListen()
+                            }
                         }
-
-                        Log.i(TAG, "PCM推送完成: $chunkCount chunks, ${pcmData.size} bytes, 调用 stopPush()")
-                        currentDuix.stopPush()
-                        runOnUiThread {
-                            updateStatus("数字人播放中...")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Android TTS PCM推送异常", e)
-                        runOnUiThread {
-                            updateStatus("语音播放失败: ${e.message}")
-                            currentState = State.IDLE
-                            updateUI()
-                            scheduleAutoListen()
-                        }
-                    }
-                }.start()
-            }
-
-            override fun onComplete() {
-                Log.i(TAG, "Android TTS 合成完成")
-            }
-
-            override fun onError(error: String) {
-                Log.e(TAG, "Android TTS 合成失败: $error")
-                runOnUiThread {
-                    updateStatus("Android TTS失败: $error")
-                    currentState = State.IDLE
-                    updateUI()
-                    scheduleAutoListen()
+                    }.start()
                 }
+
+                override fun onComplete() {
+                    Log.i(TAG, "Android TTS 合成完成")
+                }
+
+                override fun onError(error: String) {
+                    Log.e(TAG, "Android TTS 合成失败: $error")
+                    runOnUiThread {
+                        updateStatus("语音合成失败")
+                        currentState = State.IDLE
+                        updateUI()
+                        scheduleAutoListen()
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "Android TTS调用异常", e)
+            runOnUiThread {
+                updateStatus("语音合成失败")
+                currentState = State.IDLE
+                updateUI()
+                scheduleAutoListen()
             }
-        })
+        }
     }
 
     private fun stopSpeaking() {
-        edgeTtsService.stop()
-        androidTtsService.stop()
-        duix?.stopAudio()
+        try {
+            edgeTtsService.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止Edge TTS异常", e)
+        }
+        try {
+            androidTtsService.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止Android TTS异常", e)
+        }
+        try {
+            duix?.stopAudio()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止DUIX音频异常", e)
+        }
         currentState = State.IDLE
-        updateStatus("就绪 - 按住麦克风说话")
+        updateStatus("就绪")
         updateUI()
         cancelAutoListen()
-        showToast("已停止播放")
     }
 
     // --- UI 更新 ---
@@ -688,7 +791,6 @@ class CallActivity : BaseActivity() {
         binding.tvAiResponse.text = text
         binding.tvAiResponse.visibility = if (text.isNotEmpty()) View.VISIBLE else View.GONE
 
-        // 自动滚动到底部
         binding.aiResponseScroll.post {
             binding.aiResponseScroll.fullScroll(View.FOCUS_DOWN)
         }
@@ -700,7 +802,6 @@ class CallActivity : BaseActivity() {
                 AnimationUtils.loadAnimation(this, R.anim.fade_out_down)
             )
         }
-        // 延迟隐藏
         mainHandler.postDelayed(hideBubbleRunnable, 500)
     }
 
@@ -727,18 +828,22 @@ class CallActivity : BaseActivity() {
 
     @Suppress("DEPRECATION")
     private fun performHapticFeedback() {
-        val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            val vibratorManager = getSystemService(VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-            vibratorManager?.defaultVibrator
-        } else {
-            getSystemService(VIBRATOR_SERVICE) as? Vibrator
-        }
-        vibrator?.let {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                it.vibrate(VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE))
+        try {
+            val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                val vibratorManager = getSystemService(VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                vibratorManager?.defaultVibrator
             } else {
-                it.vibrate(30)
+                getSystemService(VIBRATOR_SERVICE) as? Vibrator
             }
+            vibrator?.let {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    it.vibrate(VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    it.vibrate(30)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "触觉反馈异常", e)
         }
     }
 
@@ -746,9 +851,25 @@ class CallActivity : BaseActivity() {
         super.onDestroy()
         cancelAutoListen()
         cancelHideBubble()
-        asrService.destroy()
-        edgeTtsService.stop()
-        androidTtsService.destroy()
-        duix?.release()
+        try {
+            asrService.destroy()
+        } catch (e: Exception) {
+            Log.e(TAG, "销毁ASR异常", e)
+        }
+        try {
+            edgeTtsService.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止Edge TTS异常", e)
+        }
+        try {
+            androidTtsService.destroy()
+        } catch (e: Exception) {
+            Log.e(TAG, "销毁Android TTS异常", e)
+        }
+        try {
+            duix?.release()
+        } catch (e: Exception) {
+            Log.e(TAG, "释放DUIX异常", e)
+        }
     }
 }
