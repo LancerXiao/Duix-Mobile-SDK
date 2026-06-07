@@ -470,6 +470,8 @@ class CallActivity : BaseActivity() {
 
     private fun onMicButtonDown() {
         performHapticFeedback()
+        // 按压视觉反馈：缩小到 0.92
+        animateMicScale(0.92f, durationMs = 80L)
         // [DIAG] 麦克风按下：当前状态 + 交互模式
         Log.i(TAG, "[DIAG] onMicButtonDown: currentState=$currentState, micMode=$micInteractionMode, isDuiXReady=$isDuiXReady, userStoppedAsr=$userStoppedAsr, lastPartialText='$lastPartialText'")
         when (currentState) {
@@ -499,6 +501,8 @@ class CallActivity : BaseActivity() {
     }
 
     private fun onMicButtonUp() {
+        // 抬起时恢复原大小
+        animateMicScale(1.0f, durationMs = 120L)
         // [DIAG] 麦克风抬起：当前状态 + 交互模式
         Log.i(TAG, "[DIAG] onMicButtonUp: currentState=$currentState, micMode=$micInteractionMode")
         // 抬起时如果在监听状态：
@@ -1388,6 +1392,23 @@ class CallActivity : BaseActivity() {
             binding.recordingPulseInner.scaleY = 1.0f + level * 0.2f
         } catch (e: Exception) {
             // View 未初始化等异常，吞掉
+        }
+    }
+
+    /**
+     * 麦克风按钮缩放动画（按压反馈）
+     * @param targetScale 目标 scaleX/Y 值（按下 0.92，抬起 1.0）
+     * @param durationMs 动画时长
+     */
+    private fun animateMicScale(targetScale: Float, durationMs: Long) {
+        try {
+            binding.btnMic.animate()
+                .scaleX(targetScale)
+                .scaleY(targetScale)
+                .setDuration(durationMs)
+                .start()
+        } catch (e: Exception) {
+            // 静默吞掉
         }
     }
 

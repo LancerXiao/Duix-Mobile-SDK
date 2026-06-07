@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 麦克风按钮 selector：默认品牌色 / 按下时缩到 0.92 视觉反馈（由代码控制） -->
+<!-- 本 selector 主要用于前景 ripple + 透明度反馈 -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#33FFFFFF">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#00FFFFFF" />
+        </shape>
+    </item>
+</ripple>

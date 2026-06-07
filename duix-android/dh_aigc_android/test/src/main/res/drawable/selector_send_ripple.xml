@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 发送按钮 selector：按压时透明度反馈（视觉重量） -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#66FFFFFF">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#00FFFFFF" />
+            <corners android:radius="20dp" />
+        </shape>
+    </item>
+</ripple>
