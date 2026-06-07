@@ -1155,10 +1155,21 @@ class CallActivity : BaseActivity() {
     }
 
     // [Phase 2.4] 顶部错误条状提示（替代 Toast 显示关键错误）
+    // [Phase UI-6] 升级为滑入/滑出动画
     private val errorBannerHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val errorBannerHideRunnable = Runnable {
         try {
-            binding.errorBanner.visibility = View.GONE
+            // 滑出动画后 GONE
+            binding.errorBanner.startAnimation(
+                AnimationUtils.loadAnimation(this@CallActivity, R.anim.slide_out_top)
+            )
+            binding.errorBanner.postDelayed({
+                try {
+                    binding.errorBanner.visibility = View.GONE
+                } catch (e: Exception) {
+                    // binding 可能在 Activity 销毁后仍被调用，吞掉
+                }
+            }, 240L)  // 与 slide_out_top duration 一致
         } catch (e: Exception) {
             // binding 可能在 Activity 销毁后仍被调用，吞掉
         }
@@ -1168,6 +1179,10 @@ class CallActivity : BaseActivity() {
         try {
             binding.errorBanner.text = message
             binding.errorBanner.visibility = View.VISIBLE
+            // 滑入动画
+            binding.errorBanner.startAnimation(
+                AnimationUtils.loadAnimation(this@CallActivity, R.anim.slide_in_top)
+            )
             errorBannerHandler.removeCallbacks(errorBannerHideRunnable)
             errorBannerHandler.postDelayed(errorBannerHideRunnable, durationMs)
             Log.i(TAG, "[DIAG] showErrorBanner: '$message'")
@@ -1364,15 +1379,21 @@ class CallActivity : BaseActivity() {
     }
 
     /**
-     * 滚动消息列表到底部（Phase 2.2）
+     * 滚动消息列表到底部（Phase 2.2 + UI-6 微动效）
+     * 延迟 80ms 确保 RecyclerView 已经完成 item 插入布局
+     * 否则 smoothScrollToPosition 可能滚动到错误位置
      */
     private fun scrollMessagesToBottom() {
-        binding.messagesList.post {
-            val count = messageAdapter.itemCount
-            if (count > 0) {
-                binding.messagesList.smoothScrollToPosition(count - 1)
+        binding.messagesList.postDelayed({
+            try {
+                val count = messageAdapter.itemCount
+                if (count > 0) {
+                    binding.messagesList.smoothScrollToPosition(count - 1)
+                }
+            } catch (e: Exception) {
+                // 静默吞掉
             }
-        }
+        }, 80L)
     }
 
     /**

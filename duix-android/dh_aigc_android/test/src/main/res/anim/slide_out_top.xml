@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 顶部滑出：滑回屏幕上方 -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:interpolator/accelerate_quint">
+    <translate
+        android:duration="240"
+        android:fromYDelta="0%"
+        android:toYDelta="-100%" />
+    <alpha
+        android:duration="180"
+        android:fromAlpha="1.0"
+        android:toAlpha="0.0" />
+</set>
