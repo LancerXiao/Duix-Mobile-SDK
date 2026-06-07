@@ -117,8 +117,8 @@ class AsrService {
                 val errorMsg = buildString {
                     if (response != null) {
                         append("HTTP ${response.code}")
-                        val errBody = try { response.body?.string() } catch (_: Exception) { "" }
-                        if (errBody.isNotEmpty()) append(": $errBody")
+                        val errBody: String? = try { response.body?.string() } catch (_: Exception) { null }
+                        if (!errBody.isNullOrEmpty()) append(": $errBody")
                     } else {
                         append(t.message ?: t.javaClass.simpleName)
                     }
