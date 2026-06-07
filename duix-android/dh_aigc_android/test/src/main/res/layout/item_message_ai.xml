@@ -22,13 +22,40 @@
         android:textSize="14sp"
         android:maxWidth="280dp" />
 
-    <TextView
+    <!-- 思考中三圆点（豆包/Coze 风格）：3 个 View 错相位跳动 -->
+    <LinearLayout
         android:id="@+id/tvThinking"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:layout_marginTop="4dp"
-        android:text="思考中..."
-        android:textColor="#99FFFFFF"
-        android:textSize="12sp"
-        android:visibility="gone" />
+        android:background="@drawable/bg_chat_bubble"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:visibility="gone">
+
+        <View
+            android:id="@+id/dot1"
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/dot_thinking" />
+
+        <View
+            android:id="@+id/dot2"
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/dot_thinking" />
+
+        <View
+            android:id="@+id/dot3"
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:background="@drawable/dot_thinking" />
+
+    </LinearLayout>
 </LinearLayout>

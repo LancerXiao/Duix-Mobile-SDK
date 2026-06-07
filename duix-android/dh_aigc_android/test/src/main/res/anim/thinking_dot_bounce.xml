@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shareInterpolator="false">
+    <!-- 三个圆点错相位跳动：透明度 + 微小缩放，模拟豆包/Coze 的"打字中"效果 -->
+    <alpha
+        android:duration="600"
+        android:fromAlpha="0.3"
+        android:toAlpha="1.0"
+        android:repeatMode="reverse"
+        android:repeatCount="infinite" />
+    <scale
+        android:duration="600"
+        android:fromXScale="0.85"
+        android:fromYScale="0.85"
+        android:toXScale="1.15"
+        android:toYScale="1.15"
+        android:pivotX="50%"
+        android:pivotY="50%"
+        android:repeatMode="reverse"
+        android:repeatCount="infinite" />
+</set>
