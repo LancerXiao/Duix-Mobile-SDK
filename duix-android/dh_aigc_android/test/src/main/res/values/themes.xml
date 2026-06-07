@@ -2,7 +2,6 @@
 <resources>
 
     <style name="Theme.DUIX.Test" parent="Theme.AppCompat.Light.NoActionBar">
-        <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowBackground">@color/bg_main</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowIsTranslucent">false</item>
@@ -10,7 +9,8 @@
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryDark">@color/primary_dark</item>
         <item name="colorAccent">@color/primary</item>
-        <item name="android:windowTranslucentStatus">true</item>
+        <!-- Android 15 edge-to-edge: 不使用已弃用的半透明状态栏 -->
+        <!-- 使用 fitsSystemWindows 处理系统栏间距 -->
     </style>
 
 </resources>
