@@ -427,6 +427,8 @@ class CallActivity : BaseActivity() {
 
     private fun onMicButtonDown() {
         performHapticFeedback()
+        // [DIAG] 麦克风按下：当前状态
+        Log.i(TAG, "[DIAG] onMicButtonDown: currentState=$currentState, isDuiXReady=$isDuiXReady, userStoppedAsr=$userStoppedAsr, lastPartialText='$lastPartialText'")
         when (currentState) {
             State.SPEAKING -> {
                 // 正在说话 -> 打断
@@ -438,7 +440,7 @@ class CallActivity : BaseActivity() {
             }
             State.LISTENING -> {
                 // 已经在听了 -> 立即取消（用户主动停止录音）
-                Log.i(TAG, "用户在录音中再次点击麦克风，立即取消")
+                Log.i(TAG, "[DIAG] 用户在录音中再次点击麦克风，立即取消")
                 stopListening()
             }
             State.THINKING -> {
@@ -449,6 +451,8 @@ class CallActivity : BaseActivity() {
     }
 
     private fun onMicButtonUp() {
+        // [DIAG] 麦克风抬起：当前状态
+        Log.i(TAG, "[DIAG] onMicButtonUp: currentState=$currentState")
         // 松开时如果在监听状态，停止监听
         if (currentState == State.LISTENING) {
             stopListening()
@@ -471,6 +475,7 @@ class CallActivity : BaseActivity() {
 
     @SuppressLint("SetTextI18n")
     private fun doStartListening() {
+        Log.i(TAG, "[DIAG] doStartListening: 进入, currentState=$currentState, asrServiceInitialized=${::asrService.isInitialized}")
         if (currentState == State.LISTENING) return
         if (!::asrService.isInitialized) {
             currentState = State.IDLE
@@ -489,12 +494,16 @@ class CallActivity : BaseActivity() {
         try {
             asrService.startListening(object : HybridAsrService.Callback {
                 override fun onReady() {
+                    Log.i(TAG, "[DIAG] ASR.onReady: ASR 服务就绪")
                     runOnUiThread { updateStatus("请说话") }
                 }
 
                 override fun onPartialResult(text: String) {
                     // 用户主动停止后，迟到的 ASR 回调不再更新UI
-                    if (userStoppedAsr) return
+                    if (userStoppedAsr) {
+                        Log.d(TAG, "[DIAG] ASR.onPartialResult 丢弃: userStoppedAsr=true, text='${text.take(30)}'")
+                        return
+                    }
                     // 保存最新的 partial 文本（VAD 未触发时用作"已识别"的备份）
                     if (text != lastPartialText) {
                         lastPartialText = text
@@ -511,6 +520,7 @@ class CallActivity : BaseActivity() {
                 }
 
                 override fun onFinalResult(text: String) {
+                    Log.i(TAG, "[DIAG] ASR.onFinalResult: text='$text', userStoppedAsr=$userStoppedAsr")
                     runOnUiThread {
                         // VAD 触发了真正的 final，清理文字稳定定时器和累积 partial
                         handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
@@ -533,6 +543,7 @@ class CallActivity : BaseActivity() {
                 }
 
                 override fun onError(error: String) {
+                    Log.e(TAG, "[DIAG] ASR.onError: error='$error', userStoppedAsr=$userStoppedAsr, lastPartialText='$lastPartialText'")
                     runOnUiThread {
                         // 错误时清理文字稳定定时器和累积文本
                         handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
@@ -567,7 +578,7 @@ class CallActivity : BaseActivity() {
     private fun stopListening() {
         if (currentState != State.LISTENING) return
         if (!::asrService.isInitialized) return
-        Log.i(TAG, "用户主动停止录音，立即更新UI状态")
+        Log.i(TAG, "[DIAG] stopListening: currentState=$currentState, lastPartialText='$lastPartialText'")
         // 先标记为用户主动停止，再调用 stop，避免迟到的 ASR 回调把状态改回 THINKING
         userStoppedAsr = true
         // 取消文字稳定检测定时器
@@ -598,6 +609,11 @@ class CallActivity : BaseActivity() {
     }
 
     private fun sendToLlm(text: String) {
+        if (text.isBlank()) {
+            Log.w(TAG, "[DIAG] sendToLlm 收到空文本，跳过")
+            return
+        }
+        Log.i(TAG, "[DIAG] sendToLlm: 发送文本到LLM, text='${text.take(50)}...'")
         if (currentState == State.THINKING) return
 
         // 检查网络连接
@@ -626,6 +642,7 @@ class CallActivity : BaseActivity() {
                 }
 
                 override fun onComplete(fullText: String) {
+                    Log.i(TAG, "[DIAG] LLM.onComplete: fullText长度=${fullText.length}, fullText='${fullText.take(50)}...'")
                     runOnUiThread {
                         showAiBubble(thinking = false, text = fullText)
                         if (fullText.isNotEmpty()) {
@@ -640,6 +657,7 @@ class CallActivity : BaseActivity() {
                 }
 
                 override fun onError(error: String) {
+                    Log.e(TAG, "[DIAG] LLM.onError: error='$error'")
                     runOnUiThread {
                         currentState = State.IDLE
                         updateStatus("请求出错: $error")
@@ -659,7 +677,7 @@ class CallActivity : BaseActivity() {
                 }
             })
         } catch (e: Exception) {
-            Log.e(TAG, "LLM请求异常", e)
+            Log.e(TAG, "[DIAG] LLM请求异常", e)
             currentState = State.IDLE
             updateStatus("请求出错")
             hideAiBubble()

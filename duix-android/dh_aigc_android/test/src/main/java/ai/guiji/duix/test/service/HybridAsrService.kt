@@ -40,6 +40,8 @@ class HybridAsrService(private val context: Context) {
     private val recordExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var useDashscope: Boolean = true
+    // [DIAG] 诊断用：上次打印时间戳
+    private var lastDiagTimeMs = 0L
 
     fun create() {
         // 尝试创建 AndroidAsr 作为 fallback
@@ -61,12 +63,21 @@ class HybridAsrService(private val context: Context) {
     }
 
     fun startListening(callback: Callback) {
+        // [DIAG] 启动录音总入口
+        Log.i(TAG, "[DIAG] HybridAsrService.startListening: callback=${callback.javaClass.simpleName}, isListening=${isListening.get()}")
         if (isListening.get()) {
-            Log.w(TAG, "已经在监听中")
+            // [DIAG] 已经在监听中，防止覆盖
+            Log.w(TAG, "[DIAG] 警告: 已经在监听中，忽略本次 startListening")
             return
+        }
+        if (currentCallback != null) {
+            // [DIAG] 防止覆盖未清理的回调
+            Log.w(TAG, "[DIAG] 警告: 上一个callback尚未清理，强制清空")
+            currentCallback = null
         }
         currentCallback = callback
         useDashscope = PREFERRED_ENGINE == "dashscope"
+        Log.i(TAG, "[DIAG] 选择引擎: $PREFERRED_ENGINE (useDashscope=$useDashscope)")
 
         if (useDashscope) {
             startDashscopeListening(callback)
@@ -80,7 +91,8 @@ class HybridAsrService(private val context: Context) {
      */
     private fun startDashscopeListening(callback: Callback) {
         isListening.set(true)
-        Log.i(TAG, "使用 DashScope ASR (fun-asr-realtime)")
+        // [DIAG] 启动 DashScope ASR
+        Log.i(TAG, "[DIAG] startDashscopeListening: 进入 DashScope ASR 模式")
 
         dashscopeAsr = AsrService()
         dashscopeAsr?.start(object : AsrService.Callback {
@@ -99,7 +111,7 @@ class HybridAsrService(private val context: Context) {
             }
 
             override fun onError(error: String) {
-                Log.e(TAG, "DashScope ASR 错误: $error")
+                Log.e(TAG, "[DIAG] DashScope ASR 错误: $error")
                 isListening.set(false)
                 // 停止录音
                 try {
@@ -178,7 +190,7 @@ class HybridAsrService(private val context: Context) {
             try {
                 val minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL, AUDIO_FORMAT)
                 if (minBufferSize == AudioRecord.ERROR || minBufferSize == AudioRecord.ERROR_BAD_VALUE) {
-                    Log.e(TAG, "AudioRecord minBufferSize 错误: $minBufferSize")
+                    Log.e(TAG, "[DIAG] AudioRecord.getMinBufferSize 错误: $minBufferSize (sampleRate=$SAMPLE_RATE, channel=$CHANNEL, format=$AUDIO_FORMAT)")
                     mainHandler.post { currentCallback?.onError("录音初始化失败") }
                     return@submit
                 }
@@ -195,7 +207,7 @@ class HybridAsrService(private val context: Context) {
                 )
 
                 if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                    Log.e(TAG, "AudioRecord 初始化失败")
+                    Log.e(TAG, "[DIAG] AudioRecord 初始化失败: state=${audioRecord?.state}")
                     audioRecord?.release()
                     audioRecord = null
                     mainHandler.post { currentCallback?.onError("录音器初始化失败") }
@@ -204,16 +216,36 @@ class HybridAsrService(private val context: Context) {
 
                 audioRecord?.startRecording()
                 val buffer = ByteArray(minBufferSize)
-                Log.i(TAG, "开始录音, minBufferSize=$minBufferSize, allocBufferSize=$bufferSize")
+                // [DIAG] 录音参数和音频源
+                Log.i(TAG, "[DIAG] AudioRecord.startRecording: sampleRate=$SAMPLE_RATE, channel=MONO, format=PCM_16BIT, audioSource=VOICE_RECOGNITION, minBufferSize=$minBufferSize, allocBufferSize=$bufferSize, readBuffer=${buffer.size}")
+
+                var totalReadBytes = 0L
+                var totalReadPackets = 0
+                var firstReadLogged = false
+                val startTimeMs = System.currentTimeMillis()
 
                 while (isListening.get()) {
                     val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
                     if (read > 0) {
                         val data = buffer.copyOf(read)
                         onAudioData(data)
+                        totalReadBytes += read
+                        totalReadPackets++
+                        // [DIAG] 第一次成功读 + 每 5 秒打印一次
+                        if (!firstReadLogged) {
+                            firstReadLogged = true
+                            Log.i(TAG, "[DIAG] 第一次成功读取音频: $read 字节, 距录音开始 ${System.currentTimeMillis() - startTimeMs}ms")
+                            lastDiagTimeMs = System.currentTimeMillis()
+                        }
+                        val now = System.currentTimeMillis()
+                        if (now - lastDiagTimeMs >= 5000) {
+                            val durSec = (now - startTimeMs) / 1000.0
+                            Log.i(TAG, "[DIAG] 录音统计: 累计 $totalReadBytes 字节 / $totalReadPackets 包 / ${durSec}s (${(totalReadBytes / durSec).toLong()} bytes/s)")
+                            lastDiagTimeMs = now
+                        }
                     } else if (read < 0) {
                         // AudioRecord 错误，重置
-                        Log.w(TAG, "AudioRecord.read 错误: $read")
+                        Log.w(TAG, "[DIAG] AudioRecord.read 错误: $read (累计 $totalReadPackets 包)")
                         try {
                             audioRecord?.stop()
                             audioRecord?.release()
@@ -241,7 +273,7 @@ class HybridAsrService(private val context: Context) {
                     }
                 }
 
-                Log.i(TAG, "录音结束")
+                Log.i(TAG, "[DIAG] 录音结束, totalReadBytes=$totalReadBytes, totalReadPackets=$totalReadPackets, durSec=${(System.currentTimeMillis() - startTimeMs) / 1000.0}")
             } catch (e: Exception) {
                 Log.e(TAG, "录音异常", e)
                 mainHandler.post { currentCallback?.onError("录音异常: ${e.message}") }

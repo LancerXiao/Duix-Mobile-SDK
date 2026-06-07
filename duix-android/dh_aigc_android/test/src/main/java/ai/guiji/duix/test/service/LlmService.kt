@@ -1,5 +1,6 @@
 package ai.guiji.duix.test.service
 
+import android.util.Log
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -17,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class LlmService {
 
     companion object {
+        private const val TAG = "LlmService"
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 1000L
     }
@@ -48,6 +50,7 @@ class LlmService {
             callback.onError("正在请求中，请稍候")
             return
         }
+        Log.i(TAG, "[DIAG] LLM.chat: text='${userMessage.take(50)}', url=${AiConfig.LLM_BASE_URL}/chat/completions, model=${AiConfig.LLM_MODEL}, keyPrefix=${AiConfig.AGNES_AI_API_KEY.take(8)}...")
         chatWithRetry(userMessage, callback, 0)
     }
 
@@ -81,6 +84,7 @@ class LlmService {
 
         client.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: Call, e: java.io.IOException) {
+                Log.e(TAG, "[DIAG] LLM.onFailure: retryCount=$retryCount", e)
                 synchronized(messages) {
                     removeLastMessage()
                 }
@@ -103,10 +107,12 @@ class LlmService {
 
             override fun onResponse(call: Call, response: Response) {
                 if (!response.isSuccessful) {
+                    Log.e(TAG, "[DIAG] LLM.onResponse: HTTP ${response.code}, retryCount=$retryCount")
                     synchronized(messages) {
                         removeLastMessage()
                     }
                     val errorBody = try { response.body?.string() } catch (_: Exception) { "" }
+                    Log.e(TAG, "[DIAG] LLM errorBody: $errorBody")
                     val errorMsg = when (response.code) {
                         401 -> "API认证失败"
                         429 -> "请求过于频繁，请稍后重试"

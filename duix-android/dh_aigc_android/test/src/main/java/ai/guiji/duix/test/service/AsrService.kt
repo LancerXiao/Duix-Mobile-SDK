@@ -28,6 +28,10 @@ class AsrService {
     private var webSocket: WebSocket? = null
     private var taskId: String = ""
     private var isRunning = false
+    // [DIAG] 诊断用：累计发送字节数和包数
+    private var totalBytesSent = 0L
+    private var totalPacketsSent = 0
+    private var lastDiagTimeMs = 0L
 
     interface Callback {
         fun onReady()
@@ -41,6 +45,12 @@ class AsrService {
         if (isRunning) return
 
         taskId = UUID.randomUUID().toString().replace("-", "").take(32)
+        // [DIAG] 启动诊断
+        val keyPreview = AiConfig.DASHSCOPE_API_KEY.take(8) + "..."
+        Log.i(TAG, "[DIAG] ASR.start: url=${AiConfig.ASR_WS_URL}, model=${AiConfig.ASR_MODEL}, taskId=$taskId, keyPrefix=$keyPreview")
+        totalBytesSent = 0
+        totalPacketsSent = 0
+        lastDiagTimeMs = System.currentTimeMillis()
 
         val request = Request.Builder()
             .url(AiConfig.ASR_WS_URL)
@@ -49,7 +59,8 @@ class AsrService {
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.d(TAG, "WebSocket connected")
+                // [DIAG] WebSocket 连接成功
+                Log.i(TAG, "[DIAG] WebSocket onOpen: HTTP ${response.code}, protocol=${response.protocol}")
                 // 发送run-task指令
                 val runTask = JSONObject().apply {
                     put("header", JSONObject().apply {
@@ -70,6 +81,7 @@ class AsrService {
                         put("input", JSONObject())
                     })
                 }
+                Log.i(TAG, "[DIAG] 发送run-task指令: ${runTask.toString().take(200)}")
                 webSocket.send(runTask.toString())
             }
 
@@ -78,10 +90,13 @@ class AsrService {
                     val message = JSONObject(text)
                     val header = message.getJSONObject("header")
                     val event = header.optString("event", "")
+                    // [DIAG] 收到消息
+                    Log.d(TAG, "[DIAG] onMessage: event=$event, len=${text.length}")
 
                     when (event) {
                         "task-started" -> {
                             isRunning = true
+                            Log.i(TAG, "[DIAG] task-started: ASR服务就绪，可以开始发送音频")
                             callback.onReady()
                         }
                         "result-generated" -> {
@@ -90,6 +105,8 @@ class AsrService {
                             val resultText = sentence.optString("text", "")
                             val isFinal = sentence.optBoolean("end_time", false) ||
                                 sentence.optString("status", "") == "completed"
+                            // [DIAG] 识别结果
+                            Log.d(TAG, "[DIAG] result-generated: textLen=${resultText.length}, isFinal=$isFinal, text='${resultText.take(50)}'")
                             if (isFinal) {
                                 callback.onFinalResult(resultText)
                             } else {
@@ -98,21 +115,29 @@ class AsrService {
                         }
                         "task-finished" -> {
                             isRunning = false
+                            Log.i(TAG, "[DIAG] task-finished: 服务端结束, totalBytesSent=$totalBytesSent, totalPacketsSent=$totalPacketsSent")
                             callback.onClosed()
                         }
                         "task-failed" -> {
+                            val errorCode = header.optString("error_code", "")
                             val errorMsg = header.optString("error_message", "Unknown error")
                             isRunning = false
-                            callback.onError(errorMsg)
+                            // [DIAG] 任务失败（鉴权/限流/参数错误等）
+                            Log.e(TAG, "[DIAG] task-failed: code=$errorCode, msg=$errorMsg")
+                            callback.onError("$errorCode: $errorMsg")
+                        }
+                        else -> {
+                            Log.d(TAG, "[DIAG] 未知event: $event")
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Parse message error", e)
+                    Log.e(TAG, "[DIAG] Parse message error", e)
                 }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e(TAG, "WebSocket failure", t)
+                // [DIAG] WebSocket 连接失败
+                Log.e(TAG, "[DIAG] WebSocket onFailure: totalBytesSent=$totalBytesSent, totalPacketsSent=$totalPacketsSent", t)
                 isRunning = false
                 val errorMsg = buildString {
                     if (response != null) {
@@ -123,17 +148,19 @@ class AsrService {
                         append(t.message ?: t.javaClass.simpleName)
                     }
                 }
+                Log.e(TAG, "[DIAG] WebSocket onFailure 错误信息: $errorMsg")
                 callback.onError(errorMsg)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.d(TAG, "WebSocket closed: $code $reason")
+                // [DIAG] WebSocket 关闭
+                Log.i(TAG, "[DIAG] WebSocket onClosed: code=$code, reason='$reason', totalBytesSent=$totalBytesSent, totalPacketsSent=$totalPacketsSent")
                 isRunning = false
                 callback.onClosed()
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                Log.d(TAG, "WebSocket closing: $code $reason")
+                Log.i(TAG, "[DIAG] WebSocket onClosing: code=$code, reason='$reason'")
             }
         })
     }
@@ -141,11 +168,27 @@ class AsrService {
     fun sendAudio(data: ByteArray) {
         if (isRunning) {
             webSocket?.send(ByteString.of(*data))
+            totalBytesSent += data.size
+            totalPacketsSent++
+            // [DIAG] 每 5 秒打印一次发送统计
+            val now = System.currentTimeMillis()
+            if (now - lastDiagTimeMs >= 5000) {
+                Log.i(TAG, "[DIAG] sendAudio统计: 累计发送 $totalBytesSent 字节 / $totalPacketsSent 包 (avg=${if (totalPacketsSent > 0) totalBytesSent / totalPacketsSent else 0} bytes/包)")
+                lastDiagTimeMs = now
+            }
+        } else {
+            // [DIAG] isRunning=false 丢弃音频数据（重要！录音还在跑但 isRunning 已经停止）
+            if (totalPacketsSent == 0) {
+                // 只在第一次打印，避免刷屏
+                Log.w(TAG, "[DIAG] sendAudio 丢弃: isRunning=false（ASR 未就绪或已关闭）")
+            }
         }
     }
 
     fun stop() {
         if (isRunning) {
+            // [DIAG] 主动停止
+            Log.i(TAG, "[DIAG] ASR.stop: 发送finish-task, totalBytesSent=$totalBytesSent")
             val finishTask = JSONObject().apply {
                 put("header", JSONObject().apply {
                     put("action", "finish-task")
@@ -158,10 +201,15 @@ class AsrService {
             }
             webSocket?.send(finishTask.toString())
             isRunning = false
+        } else {
+            // [DIAG] stop 时 isRunning 已为 false
+            Log.w(TAG, "[DIAG] ASR.stop: isRunning=false，无需发送finish-task")
         }
     }
 
     fun close() {
+        // [DIAG] 完全关闭
+        Log.i(TAG, "[DIAG] ASR.close: isRunning=$isRunning")
         stop()
         webSocket?.close(1000, "Client closing")
         webSocket = null
