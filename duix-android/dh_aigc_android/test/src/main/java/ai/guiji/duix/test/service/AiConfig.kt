@@ -5,15 +5,18 @@ package ai.guiji.duix.test.service
  * 所有第三方API key和URL都集中在这里管理
  */
 object AiConfig {
-    // 百炼平台 DashScope API Key (用户提供)
+    // 百炼平台 DashScope API Key (用户提供 - 国内版)
     const val DASHSCOPE_API_KEY = "sk-71bd4c89525c4e0db2e713f5b87c1da1"
 
-    // ASR - fun-asr-realtime (DashScope)
-    const val ASR_WS_URL = "wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference/"
+    // ASR - fun-asr-realtime (DashScope 国内版)
+    // URL 使用国内版 dashscope.aliyuncs.com（用户提供的key是国内版的，国际版会401）
+    const val ASR_WS_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/inference/"
     const val ASR_MODEL = "fun-asr-realtime"
 
     // TTS - qwen3-tts-flash-realtime (DashScope 实时TTS)
-    const val TTS_WS_URL = "wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference/"
+    // 实时TTS使用专用路径 /realtime?model=xxx，协议是 session.update + input_text_buffer.*
+    // 注意：model 通过 URL 查询参数传递，不再放在 payload 里
+    const val TTS_WS_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen3-tts-flash-realtime"
     const val TTS_MODEL = "qwen3-tts-flash-realtime"
     const val TTS_DEFAULT_VOICE = "Cherry"  // 中文女声
 

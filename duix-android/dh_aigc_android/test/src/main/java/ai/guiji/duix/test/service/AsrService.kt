@@ -114,13 +114,26 @@ class AsrService {
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket failure", t)
                 isRunning = false
-                callback.onError(t.message ?: "WebSocket connection failed")
+                val errorMsg = buildString {
+                    if (response != null) {
+                        append("HTTP ${response.code}")
+                        val errBody = try { response.body?.string() } catch (_: Exception) { "" }
+                        if (errBody.isNotEmpty()) append(": $errBody")
+                    } else {
+                        append(t.message ?: t.javaClass.simpleName)
+                    }
+                }
+                callback.onError(errorMsg)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WebSocket closed: $code $reason")
                 isRunning = false
                 callback.onClosed()
+            }
+
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                Log.d(TAG, "WebSocket closing: $code $reason")
             }
         })
     }

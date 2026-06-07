@@ -98,10 +98,26 @@ class HybridAsrService(private val context: Context) {
             }
 
             override fun onError(error: String) {
-                Log.e(TAG, "DashScope ASR 错误: $error，自动fallback到Android ASR")
+                Log.e(TAG, "DashScope ASR 错误: $error")
                 isListening.set(false)
-                // fallback 到 Android ASR
-                startAndroidListening(callback)
+                // 停止录音
+                try {
+                    audioRecord?.stop()
+                } catch (e: Exception) {
+                    Log.w(TAG, "停止AudioRecord异常", e)
+                }
+                // 错误信息透传给上层，便于用户诊断
+                // 只有Android ASR可用且DashScope完全无法连接时才fallback
+                if (error.contains("HTTP 401") || error.contains("HTTP 403") || error.contains("InvalidApiKey")) {
+                    // API key 问题，不要再尝试Android ASR（小米设备会提示"不支持"）
+                    mainHandler.post { callback.onError("语音服务认证失败，请联系管理员检查API Key") }
+                } else if (androidAsr != null && android.speech.SpeechRecognizer.isRecognitionAvailable(context)) {
+                    // 其他网络错误，尝试 fallback 到 Android
+                    Log.i(TAG, "fallback到Android ASR")
+                    startAndroidListening(callback)
+                } else {
+                    mainHandler.post { callback.onError("语音识别失败: $error，请使用文字输入") }
+                }
             }
 
             override fun onClosed() {
