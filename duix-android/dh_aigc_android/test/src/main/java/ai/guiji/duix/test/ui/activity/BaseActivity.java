@@ -44,6 +44,15 @@ public abstract class BaseActivity extends AppCompatActivity implements Handler.
         } catch (Exception e) {
             Log.w(TAG, "设置状态栏颜色失败", e);
         }
+
+        // 设置导航栏颜色，防止Android 15底部白屏
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                getWindow().setNavigationBarColor(0xFF1A1A2E);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "设置导航栏颜色失败", e);
+        }
     }
 
     @Override
