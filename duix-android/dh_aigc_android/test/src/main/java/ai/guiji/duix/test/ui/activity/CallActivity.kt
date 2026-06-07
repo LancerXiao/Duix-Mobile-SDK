@@ -1211,6 +1211,9 @@ class CallActivity : BaseActivity() {
             State.SPEAKING -> "点击打断"
         }
 
+        // 打断提示 (Phase 2.5) - SPEAKING 时显示在数字人上方
+        binding.tvInterruptHint.visibility = if (currentState == State.SPEAKING) View.VISIBLE else View.GONE
+
         // 底部状态图标 (Phase 2.3 加大可视权重)
         binding.stateIndicatorRow.visibility = if (isDuiXReady) View.VISIBLE else View.GONE
         when (currentState) {
