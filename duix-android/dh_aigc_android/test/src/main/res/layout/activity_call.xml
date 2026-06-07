@@ -187,6 +187,16 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <!-- 数字人底部渐变：让数字人和消息区域视觉平滑过渡（豆包风格） -->
+    <View
+        android:id="@+id/dhBottomGradient"
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:background="@drawable/bg_dh_bottom_gradient"
+        app:layout_constraintBottom_toTopOf="@+id/messagesList"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <!-- Bottom panel -->
     <LinearLayout
         android:id="@+id/bottomPanel"
