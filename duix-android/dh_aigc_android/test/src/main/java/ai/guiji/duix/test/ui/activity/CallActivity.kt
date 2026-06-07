@@ -530,7 +530,7 @@ class CallActivity : BaseActivity() {
             doStartListening()
         } else {
             // 现有行为：弹 Toast 提示需要麦克风权限
-            showToast("需要麦克风权限才能对话")
+            showErrorBanner("需要麦克风权限才能对话", 4000)
             // [DIAG] Phase 1.5 骨架：记录权限诊断信息
             PermissionManager.logDiagnose(this, Manifest.permission.RECORD_AUDIO, code)
         }
@@ -679,7 +679,8 @@ class CallActivity : BaseActivity() {
                         currentState = State.IDLE
                         updateStatus("识别出错: $error")
                         updateUI()
-                        showToast("语音识别出错: $error")
+                        // [Phase 2.4] 用 banner 替代 Toast
+                        showErrorBanner("语音识别出错: $error", 4000)
                         if (error.contains("No speech") || error.contains("No match")) {
                             scheduleAutoListen()
                         }
@@ -748,7 +749,7 @@ class CallActivity : BaseActivity() {
 
         // 检查网络连接
         if (!isNetworkAvailable()) {
-            showToast("网络不可用，请检查网络连接")
+            showErrorBanner("网络不可用，请检查网络连接", 4000)
             updateStatus("网络不可用")
             return
         }
@@ -909,7 +910,7 @@ class CallActivity : BaseActivity() {
                     runOnUiThread {
                         // fallback 到 Edge TTS
                         currentTtsEngine = TtsEngine.EDGE_TTS
-                        showToast("Qwen TTS失败，使用Edge TTS: $error")
+                        showErrorBanner("Qwen TTS 失败，切换到 Edge TTS: $error", 3000)
                         updateUI()
                         synthesizeWithEdgeTts(text, currentDuix)
                     }
@@ -1149,6 +1150,28 @@ class CallActivity : BaseActivity() {
 
     private fun showToast(msg: String) {
         Toast.makeText(mContext, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    // [Phase 2.4] 顶部错误条状提示（替代 Toast 显示关键错误）
+    private val errorBannerHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val errorBannerHideRunnable = Runnable {
+        try {
+            binding.errorBanner.visibility = View.GONE
+        } catch (e: Exception) {
+            // binding 可能在 Activity 销毁后仍被调用，吞掉
+        }
+    }
+
+    private fun showErrorBanner(message: String, durationMs: Long = 3000) {
+        try {
+            binding.errorBanner.text = message
+            binding.errorBanner.visibility = View.VISIBLE
+            errorBannerHandler.removeCallbacks(errorBannerHideRunnable)
+            errorBannerHandler.postDelayed(errorBannerHideRunnable, durationMs)
+            Log.i(TAG, "[DIAG] showErrorBanner: '$message'")
+        } catch (e: Exception) {
+            Log.e(TAG, "showErrorBanner 异常", e)
+        }
     }
 
     private fun updateUI() {
