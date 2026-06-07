@@ -223,9 +223,9 @@ class HybridAsrService(private val context: Context) {
     fun destroy() {
         stopListening()
         try {
-            dashscopeAsr?.close()
+            dashscopeAsr?.stop()
         } catch (e: Exception) {
-            Log.e(TAG, "关闭DashScope ASR异常", e)
+            Log.e(TAG, "停止DashScope ASR异常", e)
         }
         try {
             androidAsr?.destroy()

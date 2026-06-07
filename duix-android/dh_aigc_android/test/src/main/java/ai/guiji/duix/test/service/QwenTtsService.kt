@@ -127,22 +127,8 @@ class QwenTtsService {
 
                     when (event) {
                         "task-started" -> {
-                            Log.i(TAG, "TTS task started")
-                            // 发送要合成的文本
-                            val finishTask = JSONObject().apply {
-                                put("header", JSONObject().apply {
-                                    put("action", "continue-task")
-                                    put("task_id", taskId)
-                                    put("streaming", "duplex")
-                                })
-                                put("payload", JSONObject().apply {
-                                    put("input", JSONObject().apply {
-                                        put("text", text)
-                                    })
-                                })
-                            }
-                            // 注意：这里需要先发送文本，再发送finish-task
-                            // 因为onMessage是处理响应消息的回调，需要重新组织流程
+                            Log.i(TAG, "TTS task started, 等待发送文本")
+                            // 文本通过 sendTextToTts 在 onOpen 后异步发送
                         }
                         "result-generated" -> {
                             // 收到音频数据

@@ -128,9 +128,11 @@ class ModelManager {
         Log.i(TAG, "开始下载: $url -> ${zipFile.absolutePath}")
 
         // 1. 下载 zip 文件（多线程+断点续传）
-        val success = downloader.download(url, zipFile) { current, total ->
-            callback.onDownloadProgress(current, total)
-        }
+        val success = downloader.download(url, zipFile, AiConfig.DOWNLOAD_THREADS, object : MultiThreadDownloader.ProgressCallback {
+            override fun onProgress(current: Long, total: Long) {
+                callback.onDownloadProgress(current, total)
+            }
+        })
         if (!success) {
             // zip文件可能损坏，删除重试
             if (zipFile.exists()) zipFile.delete()

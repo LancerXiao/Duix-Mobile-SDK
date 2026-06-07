@@ -19,6 +19,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 
+import ai.guiji.duix.test.service.AiConfig
 import ai.guiji.duix.test.service.ModelManager
 
 /**
@@ -176,7 +177,7 @@ class MainActivity : Activity() {
             desc = "数字人模型 1"
         ) {
             onModelCardClicked(AiConfig.MODEL_NAME_XIAOBEN, AiConfig.MODEL_XIAOBEN_URL)
-        )
+        }
         mCardXiaoben = xiaobenCard.card
         mStatusXiaoben = xiaobenCard.statusView
         mBtnDownloadXiaoben = xiaobenCard.downloadBtn

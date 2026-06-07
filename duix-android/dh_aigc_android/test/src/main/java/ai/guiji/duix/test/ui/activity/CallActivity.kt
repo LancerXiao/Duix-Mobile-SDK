@@ -8,6 +8,7 @@ import ai.guiji.duix.test.R
 import ai.guiji.duix.test.databinding.ActivityCallBinding
 import ai.guiji.duix.test.service.AndroidAsrService
 import ai.guiji.duix.test.service.AndroidTtsService
+import ai.guiji.duix.test.service.AiConfig
 import ai.guiji.duix.test.service.EdgeTtsService
 import ai.guiji.duix.test.service.HybridAsrService
 import ai.guiji.duix.test.service.LlmService
@@ -885,6 +886,7 @@ class CallActivity : BaseActivity() {
 
         // TTS引擎指示器
         binding.tvTtsEngine.text = when (currentTtsEngine) {
+            TtsEngine.QWEN_TTS -> "Qwen TTS"
             TtsEngine.EDGE_TTS -> "Edge TTS"
             TtsEngine.ANDROID_TTS -> "Android TTS"
         }
