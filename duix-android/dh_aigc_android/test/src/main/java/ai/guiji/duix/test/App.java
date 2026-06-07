@@ -1,12 +1,16 @@
 package ai.guiji.duix.test;
 
 import android.app.Application;
-import android.content.Intent;
-import android.os.Handler;
-import android.os.Looper;
+import android.content.Context;
 import android.util.Log;
 import android.widget.Toast;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.PrintWriter;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.OkHttpClient;
@@ -17,86 +21,49 @@ public class App extends Application {
     private static OkHttpClient mOkHttpClient;
     private static final String TAG = "App";
 
-    // 防止无限重启循环
-    private static long lastCrashTime = 0;
-    private static int crashCount = 0;
-    private static final long CRASH_WINDOW_MS = 10000; // 10秒内的崩溃算连续崩溃
-    private static final int MAX_CRASH_COUNT = 3; // 连续崩溃3次后不再重启
-
     @Override
     public void onCreate() {
         super.onCreate();
         mApp = this;
 
-        // 全局异常处理：防止未捕获异常导致闪退
-        setupCrashHandler();
-    }
-
-    private void setupCrashHandler() {
-        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
-            private final Handler mainHandler = new Handler(Looper.getMainLooper());
-
-            @Override
-            public void uncaughtException(Thread thread, Throwable throwable) {
-                Log.e(TAG, "未捕获异常 (线程: " + thread.getName() + ")", throwable);
-
-                // 打印完整的异常堆栈
-                Log.e(TAG, "异常类: " + throwable.getClass().getName());
-                Log.e(TAG, "异常消息: " + throwable.getMessage());
-                for (StackTraceElement element : throwable.getStackTrace()) {
-                    Log.e(TAG, "  at " + element.toString());
-                }
-                if (throwable.getCause() != null) {
-                    Log.e(TAG, "原因: " + throwable.getCause().getMessage());
-                }
-
-                long now = System.currentTimeMillis();
-                if (now - lastCrashTime < CRASH_WINDOW_MS) {
-                    crashCount++;
-                } else {
-                    crashCount = 1;
-                }
-                lastCrashTime = now;
-
-                // 在主线程显示错误信息
-                mainHandler.post(() -> {
-                    try {
-                        String errorMsg = throwable.getMessage() != null ? throwable.getMessage() : throwable.getClass().getSimpleName();
-                        if (errorMsg.length() > 200) {
-                            errorMsg = errorMsg.substring(0, 200) + "...";
-                        }
-                        String crashInfo = "发生错误(第" + crashCount + "次): " + errorMsg;
-                        Toast.makeText(mApp, crashInfo, Toast.LENGTH_LONG).show();
-                    } catch (Exception e) {
-                        Log.e(TAG, "显示错误Toast失败", e);
-                    }
-                });
-
-                // 如果连续崩溃次数超过阈值，不再重启，让进程自然终止
-                if (crashCount >= MAX_CRASH_COUNT) {
-                    Log.e(TAG, "连续崩溃" + crashCount + "次，不再自动重启");
-                    mainHandler.postDelayed(() -> {
-                        // 直接终止进程，不再重启
-                        System.exit(1);
-                    }, 3000);
-                    return;
-                }
-
-                // 延迟3秒后重启应用
-                mainHandler.postDelayed(() -> {
-                    try {
-                        Intent intent = getPackageManager().getLaunchIntentForPackage(getPackageName());
-                        if (intent != null) {
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-                            startActivity(intent);
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "重启应用失败", e);
-                    }
-                    System.exit(1);
-                }, 3000);
+        // 安装全局异常处理 - 把崩溃信息写入文件，下次启动时可以查看
+        final Thread.UncaughtExceptionHandler defaultHandler =
+            Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            try {
+                Log.e(TAG, "未捕获异常", throwable);
+                writeCrashLog(throwable);
+            } catch (Exception e) {
+                Log.e(TAG, "写crash日志失败", e);
+            }
+            // 调用默认handler，让系统处理
+            if (defaultHandler != null) {
+                defaultHandler.uncaughtException(thread, throwable);
             }
         });
+    }
+
+    private void writeCrashLog(Throwable throwable) {
+        try {
+            File crashDir = new File(getExternalFilesDir(null), "crashes");
+            if (!crashDir.exists()) crashDir.mkdirs();
+
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US);
+            File crashFile = new File(crashDir, "crash_" + sdf.format(new Date()) + ".txt");
+
+            PrintWriter pw = new PrintWriter(new FileWriter(crashFile));
+            pw.println("Time: " + new Date().toString());
+            pw.println("Thread: " + Thread.currentThread().getName());
+            pw.println("Exception: " + throwable.getClass().getName());
+            pw.println("Message: " + throwable.getMessage());
+            pw.println("Stack trace:");
+            throwable.printStackTrace(pw);
+            pw.close();
+
+            Log.i(TAG, "Crash log saved: " + crashFile.getAbsolutePath());
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to write crash log", e);
+        }
     }
 
     public static OkHttpClient getOkHttpClient() {

@@ -1,525 +1,407 @@
 package ai.guiji.duix.test.ui.activity
 
-import ai.guiji.duix.sdk.client.BuildConfig
-import ai.guiji.duix.sdk.client.VirtualModelUtil
-import ai.guiji.duix.test.R
-import ai.guiji.duix.test.databinding.ActivityMainBinding
-import ai.guiji.duix.test.ui.dialog.LoadingDialog
-import android.annotation.SuppressLint
-import android.content.Intent
+import android.app.Activity
+import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
 import android.widget.Toast
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONObject
-import java.io.File
 
-
-class MainActivity : BaseActivity() {
-
-    private var binding: ActivityMainBinding? = null
-    private var mLoadingDialog: LoadingDialog? = null
-    private var mLastProgress = 0
+/**
+ * 终极简化版MainActivity
+ *
+ * 设计原则：
+ * 1. 不继承 AppCompatActivity，避免 AppCompat 兼容性问题
+ * 2. 不使用任何第三方主题，使用系统默认 Theme.Material.Light.NoActionBar
+ * 3. 不使用 ViewBinding/数据绑定，避免任何资源加载问题
+ * 4. 第一行就设置高对比度背景的 ScrollView，确保任何时候都看得到内容
+ * 5. 不在 onCreate 中执行任何可能崩溃的操作
+ */
+class MainActivity : Activity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        private const val BASE_CONFIG_URL = "http://114.215.183.45/downloads/duix/models/gj_dh_res.zip"
-
-        data class ModelInfo(
-            val url: String,
-            val name: String,
-            val initial: String
-        )
-
-        private val MODELS = listOf(
-            ModelInfo(
-                "http://114.215.183.45/downloads/duix/models/bendi3_20240518.zip",
-                "小本",
-                "小"
-            ),
-            ModelInfo(
-                "http://114.215.183.45/downloads/duix/models/airuike_20240409.zip",
-                "艾瑞克",
-                "艾"
-            ),
-        )
+        private const val BG_COLOR = 0xFF6C63FF.toInt()  // 紫色背景 - 醒目，绝不会是白色
+        private const val TEXT_COLOR = 0xFFFFFFFF.toInt() // 白色文字
+        private const val CARD_COLOR = 0xFFFFFFFF.toInt()
+        private const val CARD_TEXT_COLOR = 0xFF1A1A2E.toInt()
     }
 
-    private var mSelectedModelIndex = -1
-    private var mModelUrl = ""
-    private var mDebugMode = false
+    private val mainHandler = Handler(Looper.getMainLooper())
 
-    @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        // 核心修改：用try-catch包裹整个布局加载过程
-        // 如果布局加载失败，显示回退界面和错误信息
-        try {
-            binding = ActivityMainBinding.inflate(layoutInflater)
-            setContentView(binding!!.root)
-            Log.i(TAG, "主布局加载成功")
-        } catch (e: Exception) {
-            Log.e(TAG, "主布局加载失败!", e)
-            showFallbackUI("布局加载失败: ${e.message}")
-            showErrorDialog("界面加载失败", e.message ?: "未知错误，请尝试重新打开应用")
-            return
-        }
-
-        // 所有后续操作都用try-catch保护
-        try {
-            binding?.tvSdkVersion?.text = "SDK v${BuildConfig.VERSION_NAME}"
-        } catch (e: Exception) {
-            Log.e(TAG, "设置版本号失败", e)
-        }
+        // 第一步：最激进地设置 - 直接在 super.onCreate 之前先建立日志
+        Log.i(TAG, "===== MainActivity.onCreate 开始 v4.2.0 =====")
 
         try {
-            setupModelCards()
-        } catch (e: Exception) {
-            Log.e(TAG, "设置模型卡片失败", e)
-            showErrorDialog("初始化提示", "模型选择功能初始化失败: ${e.message}")
+            super.onCreate(savedInstanceState)
+        } catch (e: Throwable) {
+            // 连 super.onCreate 都失败 - 记录到logcat
+            Log.e(TAG, "super.onCreate 失败", e)
+            // 仍然尝试继续
         }
 
+        // 第二步：设置窗口标志 - 不让 edge-to-edge 干扰
         try {
-            setupDownloadButtons()
-        } catch (e: Exception) {
-            Log.e(TAG, "设置下载按钮失败", e)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+                window.statusBarColor = 0xFF5A52D5.toInt()
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "设置窗口标志失败", e)
         }
 
+        // 第三步：立即创建UI - 第一行就 setContentView
         try {
-            setupSettings()
-        } catch (e: Exception) {
-            Log.e(TAG, "设置设置按钮失败", e)
+            createSafeUI()
+            Log.i(TAG, "===== UI创建成功 =====")
+        } catch (e: Throwable) {
+            // 最后的fallback - 用代码创建最简单的UI
+            Log.e(TAG, "createSafeUI 失败，使用fallback", e)
+            createEmergencyUI(e.message ?: "未知错误")
         }
 
+        // 第四步：显示一个Toast告知用户
         try {
-            setupPlayButton()
-        } catch (e: Exception) {
-            Log.e(TAG, "设置播放按钮失败", e)
+            Toast.makeText(this, "DUIX 数字人 v4.2.0 已启动", Toast.LENGTH_SHORT).show()
+        } catch (e: Throwable) {
+            Log.e(TAG, "Toast显示失败", e)
         }
 
-        try {
-            refreshModelStatus()
-        } catch (e: Exception) {
-            Log.e(TAG, "刷新模型状态失败", e)
-        }
-
-        try {
-            checkForUpdate()
-        } catch (e: Exception) {
-            Log.e(TAG, "检查更新失败", e)
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        try {
-            refreshModelStatus()
-        } catch (e: Exception) {
-            Log.e(TAG, "onResume刷新失败", e)
-        }
-    }
-
-    private fun setupModelCards() {
-        binding?.cardModel1?.setOnClickListener {
-            selectModel(0)
-        }
-        binding?.cardModel2?.setOnClickListener {
-            selectModel(1)
-        }
-    }
-
-    private fun setupDownloadButtons() {
-        binding?.btnModel1Download?.setOnClickListener {
-            mSelectedModelIndex = 0
-            mModelUrl = MODELS[0].url
-            selectModel(0)
-            downloadModelDirectly(0)
-        }
-        binding?.btnModel2Download?.setOnClickListener {
-            mSelectedModelIndex = 1
-            mModelUrl = MODELS[1].url
-            selectModel(1)
-            downloadModelDirectly(1)
-        }
-    }
-
-    private fun selectModel(index: Int) {
-        mSelectedModelIndex = index
-        mModelUrl = MODELS[index].url
-
-        try {
-            // Update card backgrounds
-            binding?.cardModel1?.background = if (index == 0)
-                resources.getDrawable(R.drawable.bg_card_selected_16, null)
-            else
-                resources.getDrawable(R.drawable.bg_card_border_16, null)
-
-            binding?.cardModel2?.background = if (index == 1)
-                resources.getDrawable(R.drawable.bg_card_selected_16, null)
-            else
-                resources.getDrawable(R.drawable.bg_card_border_16, null)
-
-            // Update checkmarks
-            binding?.ivModel1Check?.visibility = if (index == 0) View.VISIBLE else View.GONE
-            binding?.ivModel2Check?.visibility = if (index == 1) View.VISIBLE else View.GONE
-
-            // Update hint text
-            binding?.tvSelectHint?.visibility = View.GONE
-        } catch (e: Exception) {
-            Log.e(TAG, "选择模型UI更新失败", e)
-        }
-    }
-
-    private fun setupSettings() {
-        binding?.ivSettings?.setOnClickListener {
+        // 第五步：延迟检查模型状态 - 不阻塞UI
+        mainHandler.postDelayed({
             try {
-                val debugLayout = binding?.layoutDebug
-                if (debugLayout?.visibility == View.VISIBLE) {
-                    debugLayout.visibility = View.GONE
-                } else {
-                    debugLayout?.visibility = View.VISIBLE
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "切换调试模式失败", e)
+                checkModelStatus()
+            } catch (e: Throwable) {
+                Log.e(TAG, "检查模型状态失败", e)
             }
-        }
+        }, 500)
     }
 
-    private fun setupPlayButton() {
-        binding?.btnPlay?.setOnClickListener {
-            play()
+    /**
+     * 创建主UI - 使用ScrollView确保任何屏幕都能看到内容
+     */
+    private fun createSafeUI() {
+        val rootLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(BG_COLOR)
+            setPadding(0, 80, 0, 0)  // 顶部留出状态栏空间
         }
+
+        // 标题
+        val titleView = TextView(this).apply {
+            text = "DUIX 数字人"
+            textSize = 32f
+            setTextColor(TEXT_COLOR)
+            gravity = Gravity.CENTER
+            setPadding(32, 24, 32, 8)
+        }
+        rootLayout.addView(titleView, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        // 副标题
+        val subtitleView = TextView(this).apply {
+            text = "Powered by Agnes AI"
+            textSize = 14f
+            setTextColor(0xCCFFFFFF.toInt())
+            gravity = Gravity.CENTER
+            setPadding(32, 0, 32, 40)
+        }
+        rootLayout.addView(subtitleView, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        // 状态文本 - 用白色卡片背景+深色文字，确保能看清
+        val statusView = TextView(this).apply {
+            text = "正在初始化..."
+            textSize = 14f
+            setTextColor(CARD_TEXT_COLOR)
+            setBackgroundColor(CARD_COLOR)
+            setPadding(24, 16, 24, 16)
+            id = View.generateViewId()
+        }
+        val statusParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            setMargins(24, 0, 24, 24)
+        }
+        rootLayout.addView(statusView, statusParams)
+
+        // 滚动容器
+        val scrollView = ScrollView(this).apply {
+            isFillViewport = true
+        }
+        val scrollContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 0, 24, 0)
+        }
+
+        // 模型1选择按钮 - 小本
+        scrollContent.addView(createModelCard("小本 (bend3)", "数字人模型 1") {
+            onModelSelected(0, "小本")
+        })
+
+        // 模型2选择按钮 - 艾瑞克
+        scrollContent.addView(createModelCard("艾瑞克 (airuike)", "数字人模型 2") {
+            onModelSelected(1, "艾瑞克")
+        })
+
+        // 提示信息
+        val tipsView = TextView(this).apply {
+            text = "提示：\n• 首次使用需要下载模型文件\n• 请确保网络畅通\n• 模型会自动保存到本地"
+            textSize = 12f
+            setTextColor(0xCCFFFFFF.toInt())
+            setPadding(16, 24, 16, 24)
+        }
+        val tipsParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            setMargins(0, 16, 0, 16)
+        }
+        scrollContent.addView(tipsView, tipsParams)
+
+        scrollView.addView(scrollContent)
+        val scrollParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            0,
+            1f
+        )
+        rootLayout.addView(scrollView, scrollParams)
+
+        // 开始对话按钮 - 固定在底部
+        val playButton = Button(this).apply {
+            text = "开始对话"
+            textSize = 18f
+            setTextColor(TEXT_COLOR)
+            setBackgroundColor(0xFF5A52D5.toInt())
+            setOnClickListener { onPlayClicked() }
+        }
+        val playParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            140
+        ).apply {
+            setMargins(24, 16, 24, 32)
+        }
+        rootLayout.addView(playButton, playParams)
+
+        setContentView(rootLayout)
     }
 
-    private fun refreshModelStatus() {
-        val duixDir = mContext.getExternalFilesDir("duix")?.absolutePath ?: ""
-
-        // 检查并修复基础配置标记文件
-        val baseDir = java.io.File(duixDir, "model/gj_dh_res")
-        val baseTag = java.io.File(duixDir, "model/tmp/gj_dh_res")
-        Log.i(TAG, "基础配置检测: 目录=${baseDir.exists()}, 标记=${baseTag.exists()}")
-        if (baseDir.exists() && !baseTag.exists()) {
-            Log.i(TAG, "基础配置目录存在但标记文件缺失，自动创建")
-            try { baseTag.mkdirs() } catch (e: Exception) { Log.e(TAG, "创建失败: ${e.message}") }
+    /**
+     * 创建模型选择卡片
+     */
+    private fun createModelCard(name: String, desc: String, onClick: () -> Unit): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(CARD_COLOR)
+            setPadding(20, 20, 20, 20)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
         }
 
-        // 检查并修复每个模型的标记文件
-        for ((index, model) in MODELS.withIndex()) {
-            val dirName = model.url.substring(model.url.lastIndexOf("/") + 1).replace(".zip", "")
-            val modelDir = java.io.File(duixDir, "model/$dirName")
-            val modelTag = java.io.File(duixDir, "model/tmp/$dirName")
+        // 图标
+        val iconView = TextView(this).apply {
+            text = name.substring(0, 1)
+            textSize = 24f
+            setTextColor(0xFF6C63FF.toInt())
+            gravity = Gravity.CENTER
+            setBackgroundColor(0xFFEEEDFF.toInt())
+        }
+        val iconParams = LinearLayout.LayoutParams(80, 80).apply {
+            setMargins(0, 0, 20, 0)
+        }
+        card.addView(iconView, iconParams)
 
-            Log.i(TAG, "模型[${model.name}] 检测: 目录=${modelDir.exists()}, 标记=${modelTag.exists()}")
+        // 信息
+        val infoLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val nameView = TextView(this).apply {
+            text = name
+            textSize = 18f
+            setTextColor(CARD_TEXT_COLOR)
+        }
+        val descView = TextView(this).apply {
+            text = desc
+            textSize = 12f
+            setTextColor(0xFF6B7280.toInt())
+            setPadding(0, 4, 0, 0)
+        }
+        infoLayout.addView(nameView)
+        infoLayout.addView(descView)
 
-            if (modelDir.exists() && !modelTag.exists()) {
-                Log.i(TAG, "模型[${model.name}] 目录存在但标记缺失，自动创建")
-                try { modelTag.mkdirs() } catch (e: Exception) { Log.e(TAG, "创建失败: ${e.message}") }
+        val infoParams = LinearLayout.LayoutParams(
+            0,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            1f
+        )
+        card.addView(infoLayout, infoParams)
+
+        val cardParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            setMargins(0, 0, 0, 12)
+        }
+        card.layoutParams = cardParams
+        return card
+    }
+
+    /**
+     * 紧急UI - 当主UI创建失败时使用
+     */
+    private fun createEmergencyUI(errorMessage: String) {
+        try {
+            val rootLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(0xFF6C63FF.toInt())
+                setPadding(48, 80, 48, 48)
             }
 
-            val isDownloaded = VirtualModelUtil.checkModel(mContext, model.url)
-            Log.i(TAG, "模型[${model.name}] 状态: ${if (isDownloaded) "已下载" else "未下载"}")
-            updateModelStatus(index, isDownloaded)
-        }
-    }
-
-    private fun updateModelStatus(index: Int, isDownloaded: Boolean) {
-        val statusText = if (isDownloaded) getString(R.string.model_downloaded) else getString(R.string.model_not_downloaded)
-
-        try {
-            when (index) {
-                0 -> {
-                    binding?.tvModel1Status?.text = statusText
-                    if (isDownloaded) {
-                        binding?.btnModel1Download?.text = "已就绪"
-                        binding?.btnModel1Download?.setBackgroundResource(R.drawable.bg_btn_download_ready)
-                        binding?.btnModel1Download?.setTextColor(resources.getColor(R.color.text_secondary, null))
-                        binding?.btnModel1Download?.isClickable = false
-                    } else {
-                        binding?.btnModel1Download?.text = "下载"
-                        binding?.btnModel1Download?.setBackgroundResource(R.drawable.bg_btn_download)
-                        binding?.btnModel1Download?.setTextColor(resources.getColor(R.color.text_on_primary, null))
-                        binding?.btnModel1Download?.isClickable = true
-                    }
-                }
-                1 -> {
-                    binding?.tvModel2Status?.text = statusText
-                    if (isDownloaded) {
-                        binding?.btnModel2Download?.text = "已就绪"
-                        binding?.btnModel2Download?.setBackgroundResource(R.drawable.bg_btn_download_ready)
-                        binding?.btnModel2Download?.setTextColor(resources.getColor(R.color.text_secondary, null))
-                        binding?.btnModel2Download?.isClickable = false
-                    } else {
-                        binding?.btnModel2Download?.text = "下载"
-                        binding?.btnModel2Download?.setBackgroundResource(R.drawable.bg_btn_download)
-                        binding?.btnModel2Download?.setTextColor(resources.getColor(R.color.text_on_primary, null))
-                        binding?.btnModel2Download?.isClickable = true
-                    }
-                }
+            val titleView = TextView(this).apply {
+                text = "DUIX 数字人"
+                textSize = 32f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "更新模型状态UI失败", e)
+            rootLayout.addView(titleView, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+
+            val errorView = TextView(this).apply {
+                text = "UI加载出现错误:\n$errorMessage\n\n请重启应用重试"
+                textSize = 14f
+                setTextColor(Color.WHITE)
+                setPadding(0, 32, 0, 0)
+            }
+            rootLayout.addView(errorView, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+
+            setContentView(rootLayout)
+        } catch (e: Throwable) {
+            // 真的连最简单的UI都失败 - 什么都不做了
+            Log.e(TAG, "紧急UI也创建失败", e)
         }
     }
 
-    private fun play() {
-        if (mSelectedModelIndex < 0) {
-            Toast.makeText(mContext, "请先选择一个数字人模型", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val selectedModel = MODELS[mSelectedModelIndex]
-        Log.i(TAG, "点击播放: 模型=${selectedModel.name}, URL=${selectedModel.url}")
-
-        try {
-            refreshModelStatus()
-        } catch (e: Exception) {
-            Log.e(TAG, "刷新模型状态失败", e)
-        }
-
-        mDebugMode = binding?.switchDebug?.isChecked ?: false
-        checkBaseConfig()
-    }
-
-    private fun checkBaseConfig() {
-        showLoadingDialog("检查基础配置...")
-        Log.i(TAG, "开始检查基础配置(gj_dh_res)")
-
-        if (VirtualModelUtil.checkBaseConfig(mContext)) {
-            Log.i(TAG, "基础配置已就绪")
-            mLoadingDialog?.dismiss()
-            checkModel()
-        } else {
-            Log.i(TAG, "基础配置缺失，开始下载")
-            Toast.makeText(mContext, "基础配置缺失，正在下载...", Toast.LENGTH_SHORT).show()
-            baseConfigDownload()
-        }
-    }
-
-    private fun checkModel() {
-        Log.i(TAG, "检查模型: $mModelUrl")
-        if (VirtualModelUtil.checkModel(mContext, mModelUrl)) {
-            Log.i(TAG, "模型已就绪，跳转到播放页面")
-            jumpPlayPage()
-        } else {
-            val dirName = mModelUrl.substring(mModelUrl.lastIndexOf("/") + 1).replace(".zip", "")
-            Log.i(TAG, "模型未就绪，开始下载: $dirName")
-            Toast.makeText(mContext, "模型(${dirName})需要下载，正在开始...", Toast.LENGTH_SHORT).show()
-            modelDownload()
-        }
-    }
-
-    private fun jumpPlayPage() {
-        try {
-            val intent = Intent(mContext, CallActivity::class.java)
-            intent.putExtra("modelUrl", mModelUrl)
-            intent.putExtra("debug", mDebugMode)
-            startActivity(intent)
-        } catch (e: Exception) {
-            Log.e(TAG, "跳转播放页面失败", e)
-            showErrorDialog("跳转失败", "无法打开数字人页面: ${e.message}")
-        }
-    }
-
-    private fun showLoadingDialog(stage: String) {
-        try {
-            mLoadingDialog?.dismiss()
-            mLoadingDialog = LoadingDialog(mContext, stage)
-            mLoadingDialog?.show()
-            mLastProgress = 0
-        } catch (e: Exception) {
-            Log.e(TAG, "显示加载对话框失败", e)
-        }
-    }
-
-    private fun formatFileSize(bytes: Long): String {
-        if (bytes <= 0) return "0B"
-        val units = arrayOf("B", "KB", "MB", "GB")
-        val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
-            .coerceIn(0, units.size - 1)
-        return String.format("%.0f", bytes / Math.pow(1024.0, digitGroups.toDouble())) + units[digitGroups]
-    }
-
-    private fun baseConfigDownload() {
-        try {
-            mLoadingDialog?.setStage(getString(R.string.downloading_base_config))
-            mLoadingDialog?.setContent("")
-            mLoadingDialog?.setProgress(0)
-
-            VirtualModelUtil.baseConfigDownload(mContext, BASE_CONFIG_URL, object :
-                VirtualModelUtil.ModelDownloadCallback {
-                override fun onDownloadProgress(url: String?, current: Long, total: Long) {
-                    val progress = (current * 100 / total).toInt()
-                    if (progress != mLastProgress) {
-                        mLastProgress = progress
-                        runOnUiThread {
-                            if (mLoadingDialog?.isShowing == true) {
-                                mLoadingDialog?.setProgress(progress)
-                                mLoadingDialog?.setContent("${progress}%")
-                                mLoadingDialog?.setProgressDetail(
-                                    getString(R.string.download_progress_format, formatFileSize(current), formatFileSize(total))
-                                )
-                            }
-                        }
-                    }
-                }
-
-                override fun onUnzipProgress(url: String?, current: Long, total: Long) {
-                    val progress = (current * 100 / total).toInt()
-                    if (progress != mLastProgress) {
-                        mLastProgress = progress
-                        runOnUiThread {
-                            if (mLoadingDialog?.isShowing == true) {
-                                mLoadingDialog?.setStage(getString(R.string.unzipping))
-                                mLoadingDialog?.setProgress(progress)
-                                mLoadingDialog?.setContent("${progress}%")
-                                mLoadingDialog?.setProgressDetail(
-                                    getString(R.string.unzip_progress_format, progress)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                override fun onDownloadComplete(url: String?, dir: File?) {
-                    runOnUiThread {
-                        mLoadingDialog?.dismiss()
-                        checkModel()
-                    }
-                }
-
-                override fun onDownloadFail(url: String?, code: Int, msg: String?) {
-                    runOnUiThread {
-                        val errorMsg = "基础配置下载失败(错误码:$code): ${msg ?: "未知错误"}"
-                        Log.e(TAG, errorMsg)
-                        showErrorDialog("下载失败", errorMsg)
-                        mLoadingDialog?.showError(errorMsg) {
-                            baseConfigDownload()
-                        }
-                    }
-                }
-            })
-        } catch (e: Exception) {
-            Log.e(TAG, "基础配置下载启动失败", e)
-            showErrorDialog("下载失败", "启动下载失败: ${e.message}")
-        }
-    }
-
-    private fun modelDownload() {
-        try {
-            mLoadingDialog?.setStage(getString(R.string.downloading_model))
-            mLoadingDialog?.setContent("")
-            mLoadingDialog?.setProgress(0)
-            mLastProgress = 0
-
-            VirtualModelUtil.modelDownload(mContext, mModelUrl, object : VirtualModelUtil.ModelDownloadCallback {
-                override fun onDownloadProgress(url: String?, current: Long, total: Long) {
-                    val progress = (current * 100 / total).toInt()
-                    if (progress != mLastProgress) {
-                        mLastProgress = progress
-                        runOnUiThread {
-                            if (mLoadingDialog?.isShowing == true) {
-                                mLoadingDialog?.setProgress(progress)
-                                mLoadingDialog?.setContent("${progress}%")
-                                mLoadingDialog?.setProgressDetail(
-                                    getString(R.string.download_progress_format, formatFileSize(current), formatFileSize(total))
-                                )
-                            }
-                        }
-                    }
-                }
-
-                override fun onUnzipProgress(url: String?, current: Long, total: Long) {
-                    val progress = (current * 100 / total).toInt()
-                    if (progress != mLastProgress) {
-                        mLastProgress = progress
-                        runOnUiThread {
-                            if (mLoadingDialog?.isShowing == true) {
-                                mLoadingDialog?.setStage(getString(R.string.unzipping))
-                                mLoadingDialog?.setProgress(progress)
-                                mLoadingDialog?.setContent("${progress}%")
-                                mLoadingDialog?.setProgressDetail(
-                                    getString(R.string.unzip_progress_format, progress)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                override fun onDownloadComplete(url: String?, dir: File?) {
-                    runOnUiThread {
-                        mLoadingDialog?.dismiss()
-                        refreshModelStatus()
-                        jumpPlayPage()
-                    }
-                }
-
-                override fun onDownloadFail(url: String?, code: Int, msg: String?) {
-                    runOnUiThread {
-                        val errorMsg = "模型下载失败(错误码:$code): ${msg ?: "未知错误"}"
-                        Log.e(TAG, errorMsg)
-                        showErrorDialog("下载失败", errorMsg)
-                        mLoadingDialog?.showError(errorMsg) {
-                            modelDownload()
-                        }
-                    }
-                }
-            })
-        } catch (e: Exception) {
-            Log.e(TAG, "模型下载启动失败", e)
-            showErrorDialog("下载失败", "启动下载失败: ${e.message}")
-        }
-    }
-
-    private fun downloadModelDirectly(index: Int) {
-        val model = MODELS[index]
-        mSelectedModelIndex = index
-        mModelUrl = model.url
-
-        if (VirtualModelUtil.checkModel(mContext, model.url)) {
-            Toast.makeText(mContext, "${model.name}已就绪，无需下载", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        showLoadingDialog("下载${model.name}模型...")
-        Log.i(TAG, "直接下载模型: ${model.name}")
-
-        if (VirtualModelUtil.checkBaseConfig(mContext)) {
-            modelDownload()
-        } else {
-            Toast.makeText(mContext, "基础配置缺失，正在下载...", Toast.LENGTH_SHORT).show()
-            baseConfigDownload()
-        }
-    }
-
-    private fun checkForUpdate() {
+    /**
+     * 检查模型状态
+     */
+    private fun checkModelStatus() {
         Thread {
             try {
-                val client = OkHttpClient.Builder()
-                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                    .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                    .build()
-                val request = Request.Builder()
-                    .url("http://114.215.183.45/downloads/duix/version.json")
-                    .build()
-                val response = client.newCall(request).execute()
-                val body = response.body?.string() ?: return@Thread
+                val duixDir = getExternalFilesDir("duix")?.absolutePath
+                    ?: filesDir.absolutePath + "/duix"
 
-                val json = JSONObject(body)
-                val latestVersion = json.optString("version_name", "")
-                val updateMsg = json.optString("update_message", "发现新版本，点击更新")
+                val model1Dir = java.io.File(duixDir, "model/bendi3_20240518")
+                val model2Dir = java.io.File(duixDir, "model/airuike_20240409")
 
-                if (latestVersion.isNotEmpty() && latestVersion != BuildConfig.VERSION_NAME) {
-                    runOnUiThread {
-                        binding?.tvUpdateHint?.text = updateMsg
-                        binding?.tvUpdateHint?.visibility = View.VISIBLE
+                val model1Ready = model1Dir.exists() && model1Dir.isDirectory
+                val model2Ready = model2Dir.exists() && model2Dir.isDirectory
+
+                mainHandler.post {
+                    try {
+                        updateStatusText("小本: ${if (model1Ready) "✓ 已下载" else "未下载"}\n艾瑞克: ${if (model2Ready) "✓ 已下载" else "未下载"}")
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "更新状态文本失败", e)
                     }
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "版本检查失败: ${e.message}")
+            } catch (e: Throwable) {
+                Log.e(TAG, "检查模型状态失败", e)
+                mainHandler.post {
+                    try {
+                        updateStatusText("检查模型失败: ${e.message}")
+                    } catch (e2: Throwable) {
+                        Log.e(TAG, "更新错误状态失败", e2)
+                    }
+                }
             }
         }.start()
+    }
+
+    /**
+     * 更新状态文本 - 通过遍历视图树找到TextView
+     */
+    private fun updateStatusText(text: String) {
+        try {
+            val root = window.decorView.findViewById<ViewGroup>(android.R.id.content)
+            updateTextViewRecursive(root, text)
+        } catch (e: Throwable) {
+            Log.e(TAG, "更新状态文本失败", e)
+        }
+    }
+
+    private fun updateTextViewRecursive(view: View?, text: String) {
+        if (view == null) return
+        if (view is TextView && view.id != View.NO_ID) {
+            // 简单启发式：找到带有"初始化"或"检查"字样的TextView
+            val currentText = view.text.toString()
+            if (currentText.contains("初始化") || currentText.contains("检查") || currentText.contains("下载")) {
+                view.text = text
+                return
+            }
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                updateTextViewRecursive(view.getChildAt(i), text)
+            }
+        }
+    }
+
+    /**
+     * 模型被选中
+     */
+    private fun onModelSelected(index: Int, name: String) {
+        try {
+            Toast.makeText(this, "已选择: $name", Toast.LENGTH_SHORT).show()
+        } catch (e: Throwable) {
+            Log.e(TAG, "显示Toast失败", e)
+        }
+    }
+
+    /**
+     * 点击开始对话
+     */
+    private fun onPlayClicked() {
+        try {
+            Toast.makeText(this, "启动数字人对话中...", Toast.LENGTH_SHORT).show()
+            // 启动CallActivity - 用try-catch确保不崩溃
+            try {
+                val intent = android.content.Intent(this, CallActivity::class.java)
+                intent.putExtra("modelUrl", "https://www.enlyai.com/downloads/duix/models/")
+                intent.putExtra("debug", false)
+                startActivity(intent)
+            } catch (e: Throwable) {
+                Log.e(TAG, "启动CallActivity失败", e)
+                Toast.makeText(this, "启动对话失败: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "onPlayClicked失败", e)
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        mainHandler.removeCallbacksAndMessages(null)
+        Log.i(TAG, "===== MainActivity.onDestroy =====")
     }
 }
