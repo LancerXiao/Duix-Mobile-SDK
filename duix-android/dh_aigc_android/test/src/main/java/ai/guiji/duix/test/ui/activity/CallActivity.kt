@@ -383,16 +383,21 @@ class CallActivity : BaseActivity() {
         performHapticFeedback()
         when (currentState) {
             State.SPEAKING -> {
+                // 正在说话 -> 打断
                 stopSpeaking()
             }
             State.IDLE -> {
+                // 空闲 -> 开始录音
                 startListening()
             }
             State.LISTENING -> {
-                // 已经在听了，不做处理
+                // 已经在听了 -> 立即取消（用户主动停止录音）
+                Log.i(TAG, "用户在录音中再次点击麦克风，立即取消")
+                stopListening()
             }
             State.THINKING -> {
-                // 正在思考，不做处理
+                // 思考中再次点击：不响应（避免打断 LLM），但提示一下
+                showToast("正在思考，请稍候...")
             }
         }
     }
@@ -534,7 +539,16 @@ class CallActivity : BaseActivity() {
                         updateStatus("请求出错: $error")
                         showAiBubble(thinking = false, text = "出错了: $error")
                         updateUI()
-                        scheduleAutoListen()
+                        // 重要：网络错误时不再自动重新监听，否则会陷入无限循环
+                        // 让用户决定是否继续（可手动点击麦克风或文本输入）
+                        // 但音频问题（如 No speech）允许自动重新监听
+                        val isNetworkError = error.contains("网络", ignoreCase = true) ||
+                                            error.contains("HTTP", ignoreCase = true) ||
+                                            error.contains("认证", ignoreCase = true) ||
+                                            error.contains("API", ignoreCase = true)
+                        if (!isNetworkError) {
+                            scheduleAutoListen()
+                        }
                     }
                 }
             })

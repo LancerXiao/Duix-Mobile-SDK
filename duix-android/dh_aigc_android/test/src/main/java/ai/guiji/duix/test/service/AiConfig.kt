@@ -21,6 +21,8 @@ object AiConfig {
     const val TTS_DEFAULT_VOICE = "Cherry"  // 中文女声
 
     // LLM - Agnes AI (agnes-2.0-flash)
+    // 独立 API key，因为百炼 key 不能调普通 LLM 模型（Model.AccessDenied）
+    const val AGNES_AI_API_KEY = "sk-TuKWa0JQb9nGiUc7d6goWxpRzhUGfRpALI1DASAf1qOIXNCs"
     const val LLM_BASE_URL = "https://apihub.agnes-ai.com/v1"
     const val LLM_MODEL = "agnes-2.0-flash"
     const val LLM_SYSTEM_PROMPT = "你是一个友好的数字人助手，名叫小杜。请用简洁、自然的口语风格回答问题，每次回答不超过100字。不要使用markdown格式，用纯文本回答。"

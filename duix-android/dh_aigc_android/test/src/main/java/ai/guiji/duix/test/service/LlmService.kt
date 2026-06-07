@@ -72,7 +72,7 @@ class LlmService {
 
         val request = Request.Builder()
             .url("${AiConfig.LLM_BASE_URL}/chat/completions")
-            .addHeader("Authorization", "Bearer ${AiConfig.DASHSCOPE_API_KEY}")
+            .addHeader("Authorization", "Bearer ${AiConfig.AGNES_AI_API_KEY}")
             .addHeader("Content-Type", "application/json")
             .post(body)
             .build()
