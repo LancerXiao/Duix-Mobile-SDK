@@ -4,8 +4,10 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:fitsSystemWindows="true"
-    android:paddingHorizontal="16dp"
-    android:paddingVertical="16dp">
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="16dp"
+    android:paddingBottom="16dp">
 
 
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -18,7 +20,8 @@
             android:id="@+id/tvTouch"
             android:layout_width="120dp"
             android:layout_height="120dp"
-            android:paddingVertical="12dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp"
             android:clickable="true"
             android:background="@drawable/selector_60_primary"
             android:gravity="center"

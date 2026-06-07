@@ -15,7 +15,8 @@
         android:orientation="vertical"
         android:paddingTop="48dp"
         android:paddingBottom="32dp"
-        android:paddingHorizontal="24dp">
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp">
 
         <!-- Top bar: settings icon + version -->
         <FrameLayout
@@ -77,7 +78,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="20dp">
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp">
 
             <!-- Download tips -->
             <TextView
@@ -168,7 +170,8 @@
                     android:textSize="13sp"
                     android:textStyle="bold"
                     android:gravity="center"
-                    android:paddingHorizontal="14dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
                     android:clickable="true"
                     android:focusable="true" />
 
@@ -251,7 +254,8 @@
                     android:textSize="13sp"
                     android:textStyle="bold"
                     android:gravity="center"
-                    android:paddingHorizontal="14dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
                     android:clickable="true"
                     android:focusable="true" />
 
@@ -273,7 +277,8 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:paddingVertical="8dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
                 android:visibility="gone"
                 android:layout_marginBottom="16dp">
 
@@ -299,7 +304,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingHorizontal="20dp"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
         android:paddingTop="8dp"
         android:paddingBottom="32dp">
 
@@ -312,7 +318,8 @@
             android:textSize="12sp"
             android:textColor="@color/accent"
             android:gravity="center"
-            android:paddingVertical="6dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
             android:visibility="gone"
             android:layout_marginBottom="8dp" />
 

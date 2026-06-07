@@ -10,7 +10,8 @@
         android:background="@drawable/bg_loading_dialog"
         android:gravity="center_horizontal"
         android:orientation="vertical"
-        android:paddingHorizontal="24dp"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
         android:paddingTop="28dp"
         android:paddingBottom="20dp">
 
@@ -69,7 +70,8 @@
             android:layout_marginTop="14dp"
             android:background="@drawable/bg_btn_retry"
             android:gravity="center"
-            android:paddingHorizontal="24dp"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
             android:text="@string/retry"
             android:textColor="@color/white"
             android:textSize="14sp"
