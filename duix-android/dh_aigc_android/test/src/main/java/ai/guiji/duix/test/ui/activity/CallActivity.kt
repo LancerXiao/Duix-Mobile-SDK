@@ -671,6 +671,13 @@ class CallActivity : BaseActivity() {
                         }
                     }
                 }
+
+                // [Phase 2.1] 接收音频能量回调，更新录音波形
+                override fun onAudioLevel(level: Float) {
+                    runOnUiThread {
+                        updateWaveformLevel(level)
+                    }
+                }
             })
         } catch (e: Exception) {
             Log.e(TAG, "启动语音识别异常", e)
@@ -1234,6 +1241,26 @@ class CallActivity : BaseActivity() {
 
         binding.aiResponseScroll.post {
             binding.aiResponseScroll.fullScroll(View.FOCUS_DOWN)
+        }
+    }
+
+    /**
+     * 更新录音波形显示（Phase 2.1）
+     * 根据音频能量 level (0.0~1.0) 调整外圈脉冲圆环的缩放
+     * - level=0（无声）：缩放 1.0，基础大小
+     * - level=1（满幅）：缩放 1.4，明显放大
+     * - level=0.5（普通说话）：缩放约 1.2
+     */
+    private fun updateWaveformLevel(level: Float) {
+        if (currentState != State.LISTENING) return
+        val scale = 1.0f + level * 0.4f
+        try {
+            binding.recordingPulseOuter.scaleX = scale
+            binding.recordingPulseOuter.scaleY = scale
+            binding.recordingPulseInner.scaleX = 1.0f + level * 0.2f
+            binding.recordingPulseInner.scaleY = 1.0f + level * 0.2f
+        } catch (e: Exception) {
+            // View 未初始化等异常，吞掉
         }
     }
 

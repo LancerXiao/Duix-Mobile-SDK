@@ -29,6 +29,9 @@ class HybridAsrService(private val context: Context) {
         fun onPartialResult(text: String)
         fun onFinalResult(text: String)
         fun onError(error: String)
+        // [Phase 2.1] 实时音频能量（0.0~1.0），用于波形可视化
+        // 默认实现忽略，保持向后兼容
+        fun onAudioLevel(level: Float) {}
     }
 
     private var dashscopeAsr: AsrService? = null
@@ -223,6 +226,9 @@ class HybridAsrService(private val context: Context) {
                 var totalReadPackets = 0
                 var firstReadLogged = false
                 val startTimeMs = System.currentTimeMillis()
+                // [Phase 2.1] 用于波形可视化的音频能量统计
+                var levelCounter = 0
+                val LEVEL_UPDATE_INTERVAL_PACKETS = 3  // 每 3 个包计算一次（约 60ms/次）
 
                 while (isListening.get()) {
                     val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
@@ -231,6 +237,15 @@ class HybridAsrService(private val context: Context) {
                         onAudioData(data)
                         totalReadBytes += read
                         totalReadPackets++
+                        // [Phase 2.1] 计算 RMS 能量（每 N 包一次）
+                        levelCounter++
+                        if (levelCounter >= LEVEL_UPDATE_INTERVAL_PACKETS) {
+                            levelCounter = 0
+                            val level = calculateRmsLevel(data)
+                            // 转换到 0.0~1.0 范围（短语音的 RMS 通常在 0~0.3）
+                            val normalized = (level * 5.0f).coerceIn(0.0f, 1.0f)
+                            mainHandler.post { currentCallback?.onAudioLevel(normalized) }
+                        }
                         // [DIAG] 第一次成功读 + 每 5 秒打印一次
                         if (!firstReadLogged) {
                             firstReadLogged = true
@@ -326,5 +341,28 @@ class HybridAsrService(private val context: Context) {
         dashscopeAsr = null
         androidAsr = null
         recordExecutor.shutdown()
+    }
+
+    /**
+     * 计算 PCM 16bit mono 数据的 RMS（Root Mean Square）能量
+     * [Phase 2.1] 波形可视化用
+     * 返回值范围：0.0 ~ 1.0（满幅 = 1.0）
+     */
+    private fun calculateRmsLevel(pcmData: ByteArray): Float {
+        if (pcmData.size < 2) return 0f
+        var sum = 0.0
+        var count = 0
+        // PCM 16bit little-endian：每 2 字节一个样本
+        var i = 0
+        while (i + 1 < pcmData.size) {
+            val sample = ((pcmData[i + 1].toInt() shl 8) or (pcmData[i].toInt() and 0xFF)).toShort().toInt()
+            sum += sample * sample
+            count++
+            i += 2
+        }
+        if (count == 0) return 0f
+        val rms = Math.sqrt(sum / count).toFloat()
+        // 满幅 short = 32768，转换到 0..1
+        return (rms / 32768.0f).coerceIn(0.0f, 1.0f)
     }
 }
