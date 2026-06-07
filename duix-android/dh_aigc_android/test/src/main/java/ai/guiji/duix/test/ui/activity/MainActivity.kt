@@ -11,6 +11,9 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.Toast
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
 import java.io.File
 
 
@@ -57,9 +60,11 @@ class MainActivity : BaseActivity() {
         binding.tvSdkVersion.text = "SDK v${BuildConfig.VERSION_NAME}"
 
         setupModelCards()
+        setupDownloadButtons()
         setupSettings()
         setupPlayButton()
         refreshModelStatus()
+        checkForUpdate()
     }
 
     override fun onResume() {
@@ -73,6 +78,21 @@ class MainActivity : BaseActivity() {
         }
         binding.cardModel2.setOnClickListener {
             selectModel(1)
+        }
+    }
+
+    private fun setupDownloadButtons() {
+        binding.btnModel1Download.setOnClickListener {
+            mSelectedModelIndex = 0
+            mModelUrl = MODELS[0].url
+            selectModel(0)
+            downloadModelDirectly(0)
+        }
+        binding.btnModel2Download.setOnClickListener {
+            mSelectedModelIndex = 1
+            mModelUrl = MODELS[1].url
+            selectModel(1)
+            downloadModelDirectly(1)
         }
     }
 
@@ -150,16 +170,35 @@ class MainActivity : BaseActivity() {
 
     private fun updateModelStatus(index: Int, isDownloaded: Boolean) {
         val statusText = if (isDownloaded) getString(R.string.model_downloaded) else getString(R.string.model_not_downloaded)
-        val statusIcon = if (isDownloaded) R.drawable.bg_status_downloaded else R.drawable.bg_status_not_downloaded
 
         when (index) {
             0 -> {
                 binding.tvModel1Status.text = statusText
-                binding.ivModel1Status.setImageResource(statusIcon)
+                if (isDownloaded) {
+                    binding.btnModel1Download.text = "已就绪"
+                    binding.btnModel1Download.setBackgroundResource(R.drawable.bg_btn_download_ready)
+                    binding.btnModel1Download.setTextColor(resources.getColor(R.color.text_secondary, null))
+                    binding.btnModel1Download.isClickable = false
+                } else {
+                    binding.btnModel1Download.text = "下载"
+                    binding.btnModel1Download.setBackgroundResource(R.drawable.bg_btn_download)
+                    binding.btnModel1Download.setTextColor(resources.getColor(R.color.text_on_primary, null))
+                    binding.btnModel1Download.isClickable = true
+                }
             }
             1 -> {
                 binding.tvModel2Status.text = statusText
-                binding.ivModel2Status.setImageResource(statusIcon)
+                if (isDownloaded) {
+                    binding.btnModel2Download.text = "已就绪"
+                    binding.btnModel2Download.setBackgroundResource(R.drawable.bg_btn_download_ready)
+                    binding.btnModel2Download.setTextColor(resources.getColor(R.color.text_secondary, null))
+                    binding.btnModel2Download.isClickable = false
+                } else {
+                    binding.btnModel2Download.text = "下载"
+                    binding.btnModel2Download.setBackgroundResource(R.drawable.bg_btn_download)
+                    binding.btnModel2Download.setTextColor(resources.getColor(R.color.text_on_primary, null))
+                    binding.btnModel2Download.isClickable = true
+                }
             }
         }
     }
@@ -347,5 +386,56 @@ class MainActivity : BaseActivity() {
                 }
             }
         })
+    }
+
+    private fun downloadModelDirectly(index: Int) {
+        val model = MODELS[index]
+        mSelectedModelIndex = index
+        mModelUrl = model.url
+
+        if (VirtualModelUtil.checkModel(mContext, model.url)) {
+            Toast.makeText(mContext, "${model.name}已就绪，无需下载", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        showLoadingDialog("下载${model.name}模型...")
+        Log.i(TAG, "直接下载模型: ${model.name}")
+
+        // 先检查基础配置
+        if (VirtualModelUtil.checkBaseConfig(mContext)) {
+            modelDownload()
+        } else {
+            Toast.makeText(mContext, "基础配置缺失，正在下载...", Toast.LENGTH_SHORT).show()
+            baseConfigDownload()
+        }
+    }
+
+    private fun checkForUpdate() {
+        Thread {
+            try {
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                val request = Request.Builder()
+                    .url("http://114.215.183.45/downloads/duix/version.json")
+                    .build()
+                val response = client.newCall(request).execute()
+                val body = response.body?.string() ?: return@Thread
+
+                val json = JSONObject(body)
+                val latestVersion = json.optString("version_name", "")
+                val updateMsg = json.optString("update_message", "发现新版本，点击更新")
+
+                if (latestVersion.isNotEmpty() && latestVersion != BuildConfig.VERSION_NAME) {
+                    runOnUiThread {
+                        binding.tvUpdateHint.text = updateMsg
+                        binding.tvUpdateHint.visibility = View.VISIBLE
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "版本检查失败: ${e.message}")
+            }
+        }.start()
     }
 }

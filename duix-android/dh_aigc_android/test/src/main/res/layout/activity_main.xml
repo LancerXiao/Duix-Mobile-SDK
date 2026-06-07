@@ -156,13 +156,21 @@
                         android:textColor="@color/text_secondary" />
                 </LinearLayout>
 
-                <!-- Download status indicator -->
-                <ImageView
-                    android:id="@+id/ivModel1Status"
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:src="@drawable/bg_status_not_downloaded"
-                    android:contentDescription="@string/model_not_downloaded" />
+                <!-- Download button -->
+                <TextView
+                    android:id="@+id/btnModel1Download"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:minWidth="72dp"
+                    android:background="@drawable/bg_btn_download"
+                    android:text="下载"
+                    android:textColor="@color/text_on_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:gravity="center"
+                    android:paddingHorizontal="14dp"
+                    android:clickable="true"
+                    android:focusable="true" />
 
                 <!-- Selection checkmark -->
                 <ImageView
@@ -231,13 +239,21 @@
                         android:textColor="@color/text_secondary" />
                 </LinearLayout>
 
-                <!-- Download status indicator -->
-                <ImageView
-                    android:id="@+id/ivModel2Status"
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:src="@drawable/bg_status_not_downloaded"
-                    android:contentDescription="@string/model_not_downloaded" />
+                <!-- Download button -->
+                <TextView
+                    android:id="@+id/btnModel2Download"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:minWidth="72dp"
+                    android:background="@drawable/bg_btn_download"
+                    android:text="下载"
+                    android:textColor="@color/text_on_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:gravity="center"
+                    android:paddingHorizontal="14dp"
+                    android:clickable="true"
+                    android:focusable="true" />
 
                 <!-- Selection checkmark -->
                 <ImageView
@@ -287,6 +303,19 @@
         android:paddingTop="8dp"
         android:paddingBottom="32dp">
 
+        <!-- Version update hint -->
+        <TextView
+            android:id="@+id/tvUpdateHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="发现新版本，点击更新"
+            android:textSize="12sp"
+            android:textColor="@color/accent"
+            android:gravity="center"
+            android:paddingVertical="6dp"
+            android:visibility="gone"
+            android:layout_marginBottom="8dp" />
+
         <TextView
             android:id="@+id/tvSelectHint"
             android:layout_width="match_parent"
@@ -301,7 +330,7 @@
             android:id="@+id/btnPlay"
             android:layout_width="match_parent"
             android:layout_height="52dp"
-            android:background="@drawable/selector_btn_primary"
+            android:background="@drawable/bg_btn_play_gradient"
             android:text="@string/play"
             android:textColor="@color/text_on_primary"
             android:textSize="16sp"

@@ -114,6 +114,7 @@ class CallActivity : BaseActivity() {
             binding.btnMute.visibility = View.GONE
             binding.btnUnmute.visibility = View.VISIBLE
             performHapticFeedback()
+            showToast("已静音")
         }
 
         binding.btnUnmute.setOnClickListener {
@@ -122,6 +123,7 @@ class CallActivity : BaseActivity() {
             binding.btnMute.visibility = View.VISIBLE
             binding.btnUnmute.visibility = View.GONE
             performHapticFeedback()
+            showToast("已取消静音")
         }
 
         // 麦克风按钮 - 长按说话
@@ -257,6 +259,7 @@ class CallActivity : BaseActivity() {
             currentState = State.IDLE
             updateStatus("就绪 - 按住麦克风说话")
             updateUI()
+            showToast("数字人已就绪，当前TTS: ${if (currentTtsEngine == TtsEngine.EDGE_TTS) "Edge TTS" else "Android TTS"}")
         }
     }
 
@@ -306,6 +309,7 @@ class CallActivity : BaseActivity() {
         currentState = State.LISTENING
         updateStatus("正在聆听...")
         updateUI()
+        showToast("开始聆听...")
 
         // 使用Android原生SpeechRecognizer
         asrService.startListening(object : AndroidAsrService.Callback {
@@ -414,9 +418,11 @@ class CallActivity : BaseActivity() {
 
         if (currentTtsEngine == TtsEngine.EDGE_TTS) {
             updateStatus("语音合成中(Edge TTS)...")
+            showToast("正在连接Edge TTS...")
             synthesizeWithEdgeTts(text, currentDuix)
         } else {
             updateStatus("语音合成中(Android TTS)...")
+            showToast("正在使用Android TTS...")
             synthesizeWithAndroidTts(text, currentDuix)
         }
     }
@@ -461,6 +467,8 @@ class CallActivity : BaseActivity() {
                                     Log.i(TAG, "MP3转换失败，切换到Android TTS")
                                     updateStatus("MP3转换失败: $error")
                                     currentTtsEngine = TtsEngine.ANDROID_TTS
+                                    updateUI()
+                                    showToast("MP3转换失败，切换到Android TTS")
                                     synthesizeWithAndroidTts(text, currentDuix)
                                 }
                             }
@@ -469,6 +477,8 @@ class CallActivity : BaseActivity() {
                         Log.e(TAG, "Edge TTS PCM处理异常", e)
                         runOnUiThread {
                             currentTtsEngine = TtsEngine.ANDROID_TTS
+                            updateUI()
+                            showToast("Edge TTS异常，切换到Android TTS")
                             synthesizeWithAndroidTts(text, currentDuix)
                         }
                     }
@@ -487,11 +497,14 @@ class CallActivity : BaseActivity() {
                     Log.i(TAG, "Edge TTS 连续失败 $edgeTtsFailCount 次，切换到Android TTS")
                     updateStatus("Edge TTS失败: $error，切换到Android TTS")
                     currentTtsEngine = TtsEngine.ANDROID_TTS
+                    updateUI()
+                    showToast("Edge TTS连续失败，已切换到Android TTS")
                     synthesizeWithAndroidTts(text, currentDuix)
                 } else {
                     // 第一次失败，尝试Android TTS作为本次的备选
                     Log.i(TAG, "Edge TTS 失败，尝试Android TTS")
                     updateStatus("Edge TTS失败: $error，尝试Android TTS")
+                    showToast("Edge TTS失败，尝试Android TTS")
                     synthesizeWithAndroidTts(text, currentDuix)
                 }
             }
@@ -575,6 +588,7 @@ class CallActivity : BaseActivity() {
         updateStatus("就绪 - 按住麦克风说话")
         updateUI()
         cancelAutoListen()
+        showToast("已停止播放")
     }
 
     // --- UI 更新 ---
@@ -582,6 +596,10 @@ class CallActivity : BaseActivity() {
     @SuppressLint("SetTextI18n")
     private fun updateStatus(text: String) {
         binding.tvStatus.text = text
+    }
+
+    private fun showToast(msg: String) {
+        Toast.makeText(mContext, msg, Toast.LENGTH_SHORT).show()
     }
 
     private fun updateUI() {
@@ -599,12 +617,39 @@ class CallActivity : BaseActivity() {
         // 输入框
         binding.etInput.isEnabled = sendEnabled
 
+        // TTS引擎指示器
+        binding.tvTtsEngine.text = when (currentTtsEngine) {
+            TtsEngine.EDGE_TTS -> "Edge TTS"
+            TtsEngine.ANDROID_TTS -> "Android TTS"
+        }
+
         // 麦克风按钮标签
         binding.tvMicLabel.text = when (currentState) {
             State.IDLE -> "按住说话"
             State.LISTENING -> "松开结束"
             State.THINKING -> "思考中..."
             State.SPEAKING -> "点击打断"
+        }
+
+        // 底部状态图标
+        binding.stateIndicatorRow.visibility = if (isDuiXReady) View.VISIBLE else View.GONE
+        when (currentState) {
+            State.IDLE -> {
+                binding.ivStateIcon.setImageResource(android.R.drawable.ic_btn_speak_now)
+                binding.tvStateLabel.text = "就绪"
+            }
+            State.LISTENING -> {
+                binding.ivStateIcon.setImageResource(android.R.drawable.ic_btn_speak_now)
+                binding.tvStateLabel.text = "聆听中"
+            }
+            State.THINKING -> {
+                binding.ivStateIcon.setImageResource(android.R.drawable.ic_menu_info_details)
+                binding.tvStateLabel.text = "思考中"
+            }
+            State.SPEAKING -> {
+                binding.ivStateIcon.setImageResource(android.R.drawable.ic_media_play)
+                binding.tvStateLabel.text = "播放中"
+            }
         }
 
         // 麦克风按钮背景

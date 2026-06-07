@@ -63,6 +63,20 @@
             android:textSize="17sp"
             android:textStyle="bold" />
 
+        <!-- TTS引擎指示器 -->
+        <TextView
+            android:id="@+id/tvTtsEngine"
+            android:layout_width="wrap_content"
+            android:layout_height="24dp"
+            android:gravity="center"
+            android:background="#4D000000"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="Edge TTS"
+            android:textColor="#BBFFFFFF"
+            android:textSize="10sp"
+            android:layout_marginEnd="4dp" />
+
         <!-- Mute button -->
         <ImageView
             android:id="@+id/btnMute"
@@ -94,11 +108,11 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        android:background="@drawable/bg_chat_bubble"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp"
+        android:background="#80000000"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="5dp"
+        android:paddingBottom="5dp"
         android:text="初始化中..."
         android:textColor="@color/white"
         android:textSize="12sp"
@@ -189,6 +203,34 @@
         android:paddingTop="12dp"
         android:paddingBottom="16dp"
         app:layout_constraintBottom_toBottomOf="parent">
+
+        <!-- 当前状态图标行 -->
+        <LinearLayout
+            android:id="@+id/stateIndicatorRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:id="@+id/ivStateIcon"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@android:drawable/ic_btn_speak_now"
+                app:tint="@color/white"
+                android:layout_marginEnd="6dp" />
+
+            <TextView
+                android:id="@+id/tvStateLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="就绪"
+                android:textColor="#CCFFFFFF"
+                android:textSize="12sp" />
+
+        </LinearLayout>
 
         <!-- Chat input row -->
         <LinearLayout
