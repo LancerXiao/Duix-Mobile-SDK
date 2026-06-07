@@ -15,6 +15,7 @@ import ai.guiji.duix.test.service.HybridAsrService
 import ai.guiji.duix.test.service.LlmService
 import ai.guiji.duix.test.service.Mp3ToPcmConverter
 import ai.guiji.duix.test.service.QwenTtsService
+import ai.guiji.duix.test.util.PermissionManager
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -514,7 +515,70 @@ class CallActivity : BaseActivity() {
         if (get && code == 1) {
             doStartListening()
         } else {
+            // 现有行为：弹 Toast 提示需要麦克风权限
             showToast("需要麦克风权限才能对话")
+            // [DIAG] Phase 1.5 骨架：记录权限诊断信息
+            PermissionManager.logDiagnose(this, Manifest.permission.RECORD_AUDIO, code)
+        }
+    }
+
+    /**
+     * 显示权限 rationale 解释对话框（Phase 1.5 骨架）
+     * 用于"第一次拒绝后"——告诉用户为什么需要这个权限
+     * 当前**未接通**：需要 Phase 1.5 接通阶段在 permissionsGet 中按需调用
+     */
+    @Suppress("unused")
+    private fun showPermissionRationale(permission: String) {
+        try {
+            val message = when (permission) {
+                Manifest.permission.RECORD_AUDIO -> "语音对话需要使用麦克风权限。\n\n请在接下来的对话框中允许。"
+                else -> "需要权限: $permission"
+            }
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("需要权限")
+                .setMessage(message)
+                .setPositiveButton("去开启") { _, _ ->
+                    // 重新请求权限
+                    requestPermission(arrayOf(permission), 1)
+                }
+                .setNegativeButton("取消", null)
+                .setCancelable(false)
+                .show()
+        } catch (e: Exception) {
+            Log.e(TAG, "showPermissionRationale 异常", e)
+        }
+    }
+
+    /**
+     * 显示"去设置"引导对话框（Phase 1.5 骨架）
+     * 用于"用户选了不再询问"——只能引导到系统设置手动开启
+     * 当前**未接通**
+     */
+    @Suppress("unused")
+    private fun showPermissionSettingsGuide(permission: String) {
+        try {
+            val message = "语音对话需要使用 ${permission} 权限。\n\n" +
+                    "您之前选择了\"不再询问\"，请到系统设置 → 应用 → DUIX → 权限 中手动开启。"
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("权限被禁用")
+                .setMessage(message)
+                .setPositiveButton("去设置") { _, _ ->
+                    try {
+                        val intent = android.content.Intent(
+                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                        )
+                        intent.data = android.net.Uri.fromParts("package", packageName, null)
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "跳设置异常", e)
+                        showToast("无法打开设置，请手动到系统设置中开启权限")
+                    }
+                }
+                .setNegativeButton("取消", null)
+                .setCancelable(true)
+                .show()
+        } catch (e: Exception) {
+            Log.e(TAG, "showPermissionSettingsGuide 异常", e)
         }
     }
 
