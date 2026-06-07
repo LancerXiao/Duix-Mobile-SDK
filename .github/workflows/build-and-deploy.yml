@@ -3,8 +3,6 @@ name: Build & Deploy APK
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'duix-android/dh_aigc_android/test/build.gradle'
   workflow_dispatch:
 
 jobs:
