@@ -39,6 +39,8 @@ class CallActivity : BaseActivity() {
     companion object {
         const val GL_CONTEXT_VERSION = 2
         private const val AUTO_LISTEN_DELAY_MS = 1200L
+        // ASR partial 文字稳定超时（毫秒）：超过这个时间 partial 不变就认为说话结束
+        private const val STABLE_TEXT_TIMEOUT_MS = 1500L
         // 音频采样率常量
         // Qwen TTS (qwen3-tts-flash-realtime) 固定输出 24kHz PCM
         private const val QWEN_TTS_SAMPLE_RATE = 24000
@@ -82,6 +84,32 @@ class CallActivity : BaseActivity() {
     private var isMuted = false
     // 用户主动停止 ASR 的标记位，防止停止后迟到的 ASR 回调改变状态
     private var userStoppedAsr = false
+    // 累积的 ASR partial 文本（VAD 未触发时保存）
+    private var lastPartialText = ""
+    // 上次收到 partial 的时间（用于检测文字稳定）
+    private var lastPartialTimeMs = 0L
+    // 文字稳定检测：连续 1.5 秒 partial 文本未变，自动认为说话结束
+    private val handlerAutoFinalize = Handler(Looper.getMainLooper())
+    private val autoFinalizeRunnable = Runnable {
+        if (currentState != State.LISTENING) return@Runnable
+        if (userStoppedAsr) return@Runnable
+        val text = lastPartialText
+        if (text.isEmpty()) return@Runnable
+        Log.i(TAG, "ASR partial 文字稳定 ${STABLE_TEXT_TIMEOUT_MS}ms，自动触发onFinalResult: $text")
+        // 模拟 VAD 触发的 onFinalResult：标记用户已停止 + 停 ASR + 状态切到 THINKING
+        userStoppedAsr = true
+        lastPartialText = ""
+        try {
+            asrService.stopListening()
+        } catch (e: Exception) {
+            Log.e(TAG, "autoFinalize: 停止ASR异常", e)
+        }
+        currentState = State.THINKING
+        updateStatus("识别完成")
+        updateUI()
+        showAiBubble(thinking = true, text = "正在思考...")
+        sendToLlm(text)
+    }
 
     // 自动回到监听
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -450,8 +478,10 @@ class CallActivity : BaseActivity() {
             updateUI()
             return
         }
-        // 重置用户主动停止标志，进入正常录音
+        // 重置用户主动停止标志和累积文本，进入正常录音
         userStoppedAsr = false
+        lastPartialText = ""
+        handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
         currentState = State.LISTENING
         updateStatus("聆听中...")
         updateUI()
@@ -465,11 +495,26 @@ class CallActivity : BaseActivity() {
                 override fun onPartialResult(text: String) {
                     // 用户主动停止后，迟到的 ASR 回调不再更新UI
                     if (userStoppedAsr) return
-                    runOnUiThread { updateStatus("听到: $text") }
+                    // 保存最新的 partial 文本（VAD 未触发时用作"已识别"的备份）
+                    if (text != lastPartialText) {
+                        lastPartialText = text
+                        lastPartialTimeMs = System.currentTimeMillis()
+                    }
+                    runOnUiThread {
+                        updateStatus("听到: $text")
+                        // 重置文字稳定检测定时器：1.5秒内 partial 不变就自动触发
+                        handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
+                        if (text.isNotEmpty()) {
+                            handlerAutoFinalize.postDelayed(autoFinalizeRunnable, STABLE_TEXT_TIMEOUT_MS)
+                        }
+                    }
                 }
 
                 override fun onFinalResult(text: String) {
                     runOnUiThread {
+                        // VAD 触发了真正的 final，清理文字稳定定时器和累积 partial
+                        handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
+                        lastPartialText = ""
                         // 用户主动停止后，不再进入 LLM 链路
                         if (userStoppedAsr) {
                             Log.i(TAG, "用户已主动停止，丢弃迟到的onFinalResult: $text")
@@ -489,6 +534,9 @@ class CallActivity : BaseActivity() {
 
                 override fun onError(error: String) {
                     runOnUiThread {
+                        // 错误时清理文字稳定定时器和累积文本
+                        handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
+                        lastPartialText = ""
                         // 用户主动停止后，错误信息也不再显示
                         if (userStoppedAsr) {
                             Log.i(TAG, "用户已主动停止，丢弃迟到的onError: $error")
@@ -522,16 +570,31 @@ class CallActivity : BaseActivity() {
         Log.i(TAG, "用户主动停止录音，立即更新UI状态")
         // 先标记为用户主动停止，再调用 stop，避免迟到的 ASR 回调把状态改回 THINKING
         userStoppedAsr = true
+        // 取消文字稳定检测定时器
+        handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
         try {
             asrService.stopListening()
         } catch (e: Exception) {
             Log.e(TAG, "停止语音识别异常", e)
         }
+        // 取出累积的 partial 文本，停止时主动发送给 LLM
+        // 解决"VAD 未触发时数字人不响应"的核心 bug
+        val pendingText = lastPartialText
+        lastPartialText = ""
         // 立即更新UI状态，否则按钮会一直显示红色脉冲和"松开结束"标签
         currentState = State.IDLE
         updateStatus("已停止")
         updateUI()
         cancelAutoListen()
+
+        // 如果有累积的 partial 文本，发送给 LLM
+        if (pendingText.isNotEmpty()) {
+            Log.i(TAG, "用户停止，发送累积的 ASR 文本: $pendingText")
+            updateStatus("识别完成")
+            sendToLlm(pendingText)
+        } else {
+            Log.i(TAG, "用户停止，无累积文本可发送")
+        }
     }
 
     private fun sendToLlm(text: String) {
