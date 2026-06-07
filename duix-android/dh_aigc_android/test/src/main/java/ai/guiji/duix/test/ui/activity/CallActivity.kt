@@ -147,11 +147,6 @@ class CallActivity : BaseActivity() {
         }
     }
 
-    // 隐藏气泡
-    private val hideBubbleRunnable = Runnable {
-        binding.aiResponseBubble.visibility = View.GONE
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         keepScreenOn()
@@ -819,7 +814,6 @@ class CallActivity : BaseActivity() {
             Log.e(TAG, "[DIAG] LLM请求异常", e)
             currentState = State.IDLE
             updateStatus("请求出错")
-            hideAiBubble()
             updateUI()
             scheduleAutoListen()
         }
@@ -1363,19 +1357,6 @@ class CallActivity : BaseActivity() {
             }
         }
         scrollMessagesToBottom()
-
-        // 兼容旧路径：保留原 aiResponseBubble 的可见性设置（虽然已 GONE）
-        cancelHideBubble()
-        try {
-            binding.aiResponseBubble.startAnimation(
-                AnimationUtils.loadAnimation(this, R.anim.fade_in_up)
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "加载气泡动画失败", e)
-        }
-        binding.thinkingIndicator.visibility = if (thinking) View.VISIBLE else View.GONE
-        binding.tvAiResponse.text = text
-        binding.tvAiResponse.visibility = if (text.isNotEmpty()) View.VISIBLE else View.GONE
     }
 
     /**
@@ -1408,23 +1389,6 @@ class CallActivity : BaseActivity() {
         } catch (e: Exception) {
             // View 未初始化等异常，吞掉
         }
-    }
-
-    private fun hideAiBubble() {
-        if (binding.aiResponseBubble.visibility == View.VISIBLE) {
-            try {
-                binding.aiResponseBubble.startAnimation(
-                    AnimationUtils.loadAnimation(this, R.anim.fade_out_down)
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "加载隐藏动画失败", e)
-            }
-        }
-        mainHandler.postDelayed(hideBubbleRunnable, 500)
-    }
-
-    private fun cancelHideBubble() {
-        mainHandler.removeCallbacks(hideBubbleRunnable)
     }
 
     private fun scheduleAutoListen() {
@@ -1643,10 +1607,25 @@ class CallActivity : BaseActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 回到前台时，如果当前在录音状态则重新申请音频焦点
+        if (currentState == State.LISTENING) {
+            requestAudioFocus()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // 离开前台时主动放弃音频焦点，避免其他应用录音冲突
+        abandonAudioFocus()
+        // 取消待执行的自动重连/自动监听，避免后台执行无意义的网络/录音
+        cancelAutoListen()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         cancelAutoListen()
-        cancelHideBubble()
         try {
             if (::asrService.isInitialized) asrService.destroy()
         } catch (e: Exception) {
