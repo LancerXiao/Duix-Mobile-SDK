@@ -44,6 +44,9 @@ class CallActivity : BaseActivity() {
         private const val QWEN_TTS_SAMPLE_RATE = 24000
         // DUIX SDK 内部使用 16kHz（见 duix-sdk/src/main/cpp/dhmfcc/mfcc.cpp 的 MFCC_RATE = 16000）
         private const val DUIX_SAMPLE_RATE = 16000
+        // SharedPreferences
+        private const val PREFS_NAME = "duix_prefs"
+        private const val KEY_TTS_ENGINE = "tts_engine"
     }
 
     enum class State {
@@ -69,6 +72,7 @@ class CallActivity : BaseActivity() {
 
     // TTS引擎选择
     private enum class TtsEngine { QWEN_TTS, EDGE_TTS, ANDROID_TTS }
+    private val ttsEngineCycle = listOf(TtsEngine.QWEN_TTS, TtsEngine.EDGE_TTS, TtsEngine.ANDROID_TTS)
     private var currentTtsEngine = TtsEngine.QWEN_TTS
     private var edgeTtsFailCount = 0
 
@@ -187,6 +191,11 @@ class CallActivity : BaseActivity() {
             binding.btnUnmute.visibility = View.GONE
             performHapticFeedback()
             showToast("已取消静音")
+        }
+
+        // TTS 引擎选择 - 点击循环切换 Qwen TTS → Edge TTS → Android TTS → Qwen TTS
+        binding.tvTtsEngine.setOnClickListener {
+            cycleTtsEngine()
         }
 
         // 麦克风按钮 - 长按说话
@@ -349,6 +358,8 @@ class CallActivity : BaseActivity() {
             updateStatus("就绪")
             updateUI()
             showToast("数字人已就绪")
+            // 恢复上次保存的 TTS 引擎选择
+            loadTtsEnginePreference()
             // 初始化完成后自动开始监听，参考 Call Annie 即时响应设计
             scheduleAutoListen()
         }
@@ -1061,6 +1072,55 @@ class CallActivity : BaseActivity() {
         binding.etInput.isEnabled = enabled
         binding.btnMic.alpha = if (enabled) 1.0f else 0.5f
         binding.btnSend.alpha = if (enabled) 1.0f else 0.5f
+    }
+
+    /**
+     * 循环切换 TTS 引擎：Qwen TTS → Edge TTS → Android TTS → Qwen TTS
+     * 并把选择持久化到 SharedPreferences
+     */
+    private fun cycleTtsEngine() {
+        performHapticFeedback()
+        val currentIndex = ttsEngineCycle.indexOf(currentTtsEngine)
+        val nextIndex = (currentIndex + 1) % ttsEngineCycle.size
+        val newEngine = ttsEngineCycle[nextIndex]
+        currentTtsEngine = newEngine
+        // 重置 Edge TTS 失败计数（切换后给新引擎一次机会）
+        edgeTtsFailCount = 0
+        saveTtsEnginePreference(newEngine)
+        showToast("TTS: ${getTtsEngineDisplayName(newEngine)}")
+        updateUI()
+        updateStatus("TTS: ${getTtsEngineDisplayName(newEngine)}")
+    }
+
+    private fun getTtsEngineDisplayName(engine: TtsEngine): String = when (engine) {
+        TtsEngine.QWEN_TTS -> "Qwen TTS"
+        TtsEngine.EDGE_TTS -> "Edge TTS"
+        TtsEngine.ANDROID_TTS -> "Android TTS"
+    }
+
+    private fun saveTtsEnginePreference(engine: TtsEngine) {
+        try {
+            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_TTS_ENGINE, engine.name)
+                .apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "保存 TTS 引擎偏好失败", e)
+        }
+    }
+
+    private fun loadTtsEnginePreference() {
+        try {
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val name = prefs.getString(KEY_TTS_ENGINE, TtsEngine.QWEN_TTS.name)
+            val loaded = try { TtsEngine.valueOf(name!!) } catch (e: Exception) { TtsEngine.QWEN_TTS }
+            if (loaded != currentTtsEngine) {
+                Log.i(TAG, "恢复 TTS 引擎偏好: $name")
+                currentTtsEngine = loaded
+                updateUI()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "加载 TTS 引擎偏好失败", e)
+        }
     }
 
     @Suppress("DEPRECATION")

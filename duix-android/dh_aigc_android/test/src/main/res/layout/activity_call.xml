@@ -63,18 +63,22 @@
             android:textSize="17sp"
             android:textStyle="bold" />
 
-        <!-- TTS引擎指示器 -->
+        <!-- TTS引擎指示器 (可点击切换) -->
         <TextView
             android:id="@+id/tvTtsEngine"
             android:layout_width="wrap_content"
             android:layout_height="24dp"
             android:gravity="center"
-            android:background="#4D000000"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:text="Edge TTS"
-            android:textColor="#BBFFFFFF"
-            android:textSize="10sp"
+            android:background="@drawable/bg_tts_engine_selector"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:text="Qwen TTS"
+            android:textColor="#FFFFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="点击切换TTS引擎"
             android:layout_marginEnd="4dp" />
 
         <!-- Mute button -->
