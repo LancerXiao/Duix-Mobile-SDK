@@ -432,6 +432,8 @@ class CallActivity : BaseActivity() {
             updateUI()
             return
         }
+        // 重置用户主动停止标志，进入正常录音
+        userStoppedAsr = false
         currentState = State.LISTENING
         updateStatus("聆听中...")
         updateUI()
@@ -443,11 +445,18 @@ class CallActivity : BaseActivity() {
                 }
 
                 override fun onPartialResult(text: String) {
+                    // 用户主动停止后，迟到的 ASR 回调不再更新UI
+                    if (userStoppedAsr) return
                     runOnUiThread { updateStatus("听到: $text") }
                 }
 
                 override fun onFinalResult(text: String) {
                     runOnUiThread {
+                        // 用户主动停止后，不再进入 LLM 链路
+                        if (userStoppedAsr) {
+                            Log.i(TAG, "用户已主动停止，丢弃迟到的onFinalResult: $text")
+                            return@runOnUiThread
+                        }
                         if (text.isNotEmpty()) {
                             updateStatus("识别完成")
                             sendToLlm(text)
@@ -462,6 +471,11 @@ class CallActivity : BaseActivity() {
 
                 override fun onError(error: String) {
                     runOnUiThread {
+                        // 用户主动停止后，错误信息也不再显示
+                        if (userStoppedAsr) {
+                            Log.i(TAG, "用户已主动停止，丢弃迟到的onError: $error")
+                            return@runOnUiThread
+                        }
                         currentState = State.IDLE
                         updateStatus("识别出错: $error")
                         updateUI()
@@ -481,14 +495,25 @@ class CallActivity : BaseActivity() {
         }
     }
 
+    // 用户主动停止 ASR 的标记位，防止停止后迟到的 ASR 回调改变状态
+    private var userStoppedAsr = false
+
     private fun stopListening() {
         if (currentState != State.LISTENING) return
         if (!::asrService.isInitialized) return
+        Log.i(TAG, "用户主动停止录音，立即更新UI状态")
+        // 先标记为用户主动停止，再调用 stop，避免迟到的 ASR 回调把状态改回 THINKING
+        userStoppedAsr = true
         try {
             asrService.stopListening()
         } catch (e: Exception) {
             Log.e(TAG, "停止语音识别异常", e)
         }
+        // 立即更新UI状态，否则按钮会一直显示红色脉冲和"松开结束"标签
+        currentState = State.IDLE
+        updateStatus("已停止")
+        updateUI()
+        cancelAutoListen()
     }
 
     private fun sendToLlm(text: String) {

@@ -85,16 +85,17 @@ class HybridAsrService(private val context: Context) {
         dashscopeAsr = AsrService()
         dashscopeAsr?.start(object : AsrService.Callback {
             override fun onReady() {
-                mainHandler.post { callback.onReady() }
+                mainHandler.post { currentCallback?.onReady() }
             }
 
             override fun onPartialResult(text: String) {
-                mainHandler.post { callback.onPartialResult(text) }
+                mainHandler.post { currentCallback?.onPartialResult(text) }
             }
 
             override fun onFinalResult(text: String) {
                 isListening.set(false)
-                mainHandler.post { callback.onFinalResult(text) }
+                val cb = currentCallback
+                mainHandler.post { cb?.onFinalResult(text) }
             }
 
             override fun onError(error: String) {
@@ -110,13 +111,16 @@ class HybridAsrService(private val context: Context) {
                 // 只有Android ASR可用且DashScope完全无法连接时才fallback
                 if (error.contains("HTTP 401") || error.contains("HTTP 403") || error.contains("InvalidApiKey")) {
                     // API key 问题，不要再尝试Android ASR（小米设备会提示"不支持"）
-                    mainHandler.post { callback.onError("语音服务认证失败，请联系管理员检查API Key") }
-                } else if (androidAsr != null && android.speech.SpeechRecognizer.isRecognitionAvailable(context)) {
+                    val cb = currentCallback
+                    mainHandler.post { cb?.onError("语音服务认证失败，请联系管理员检查API Key") }
+                } else if (androidAsr != null && android.speech.SpeechRecognizer.isRecognitionAvailable(context) && currentCallback != null) {
                     // 其他网络错误，尝试 fallback 到 Android
                     Log.i(TAG, "fallback到Android ASR")
-                    startAndroidListening(callback)
+                    val cb = currentCallback
+                    if (cb != null) startAndroidListening(cb)
                 } else {
-                    mainHandler.post { callback.onError("语音识别失败: $error，请使用文字输入") }
+                    val cb = currentCallback
+                    mainHandler.post { cb?.onError("语音识别失败: $error，请使用文字输入") }
                 }
             }
 
@@ -144,27 +148,30 @@ class HybridAsrService(private val context: Context) {
 
         androidAsr?.startListening(object : AndroidAsrService.Callback {
             override fun onReady() {
-                mainHandler.post { callback.onReady() }
+                mainHandler.post { currentCallback?.onReady() }
             }
 
             override fun onPartialResult(text: String) {
-                mainHandler.post { callback.onPartialResult(text) }
+                mainHandler.post { currentCallback?.onPartialResult(text) }
             }
 
             override fun onFinalResult(text: String) {
                 isListening.set(false)
-                mainHandler.post { callback.onFinalResult(text) }
+                val cb = currentCallback
+                mainHandler.post { cb?.onFinalResult(text) }
             }
 
             override fun onError(error: String) {
                 isListening.set(false)
-                mainHandler.post { callback.onError(error) }
+                val cb = currentCallback
+                mainHandler.post { cb?.onError(error) }
             }
         })
     }
 
     /**
      * 开始录音（PCM 16kHz mono）
+     * bufferSize 取 minBufferSize 的 4 倍，避免 AudioRecord 频繁欠载
      */
     private fun startRecording(onAudioData: (ByteArray) -> Unit) {
         recordExecutor.submit {
@@ -176,12 +183,15 @@ class HybridAsrService(private val context: Context) {
                     return@submit
                 }
 
+                // 录音缓冲区取 minBufferSize 的 4 倍，避免 read() 返回负数或过小的包
+                val bufferSize = minBufferSize * 4
+
                 audioRecord = AudioRecord(
-                    MediaRecorder.AudioSource.DEFAULT,
+                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
                     SAMPLE_RATE,
                     CHANNEL,
                     AUDIO_FORMAT,
-                    minBufferSize
+                    bufferSize
                 )
 
                 if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
@@ -194,13 +204,40 @@ class HybridAsrService(private val context: Context) {
 
                 audioRecord?.startRecording()
                 val buffer = ByteArray(minBufferSize)
-                Log.i(TAG, "开始录音, bufferSize=$minBufferSize")
+                Log.i(TAG, "开始录音, minBufferSize=$minBufferSize, allocBufferSize=$bufferSize")
 
                 while (isListening.get()) {
                     val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
                     if (read > 0) {
                         val data = buffer.copyOf(read)
                         onAudioData(data)
+                    } else if (read < 0) {
+                        // AudioRecord 错误，重置
+                        Log.w(TAG, "AudioRecord.read 错误: $read")
+                        try {
+                            audioRecord?.stop()
+                            audioRecord?.release()
+                        } catch (e: Exception) {
+                            Log.w(TAG, "重置AudioRecord异常", e)
+                        }
+                        audioRecord = null
+                        if (isListening.get()) {
+                            // 重新初始化录音
+                            try {
+                                audioRecord = AudioRecord(
+                                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                                    SAMPLE_RATE,
+                                    CHANNEL,
+                                    AUDIO_FORMAT,
+                                    bufferSize
+                                )
+                                if (audioRecord?.state == AudioRecord.STATE_INITIALIZED) {
+                                    audioRecord?.startRecording()
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "重新初始化AudioRecord失败", e)
+                            }
+                        }
                     }
                 }
 
@@ -221,12 +258,18 @@ class HybridAsrService(private val context: Context) {
     }
 
     fun stopListening() {
+        // 先置标志位让录音循环退出
         isListening.set(false)
+        // 先清空回调，防止 WebSocket 关闭时迟到的 onFinalResult/onError 把状态改回去
+        // CallActivity 自己负责 UI 状态更新
+        currentCallback = null
         try {
-            dashscopeAsr?.stop()
+            // 完整关闭：发 finish-task 并关闭 WebSocket
+            dashscopeAsr?.close()
         } catch (e: Exception) {
             Log.e(TAG, "停止DashScope ASR异常", e)
         }
+        dashscopeAsr = null
         try {
             androidAsr?.stopListening()
         } catch (e: Exception) {
