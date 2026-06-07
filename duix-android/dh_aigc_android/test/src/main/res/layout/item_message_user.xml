@@ -4,21 +4,23 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:gravity="end"
-    android:paddingStart="40dp"
-    android:paddingEnd="0dp"
-    android:paddingTop="4dp"
-    android:paddingBottom="4dp">
+    android:paddingStart="48dp"
+    android:paddingEnd="4dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp">
 
     <TextView
         android:id="@+id/tvMessageText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:background="@drawable/bg_chat_bubble_user"
+        android:elevation="2dp"
         android:paddingStart="14dp"
         android:paddingEnd="14dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
         android:textColor="@color/white"
         android:textSize="14sp"
+        android:lineSpacingExtra="2dp"
         android:maxWidth="280dp" />
 </LinearLayout>

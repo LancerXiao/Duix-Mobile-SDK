@@ -4,8 +4,11 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:layout_gravity="center_horizontal"
+    android:paddingStart="14dp"
+    android:paddingEnd="14dp"
     android:paddingTop="6dp"
     android:paddingBottom="6dp"
-    android:textColor="#88FFFFFF"
+    android:background="@drawable/bg_system_message"
+    android:textColor="#CCFFFFFF"
     android:textSize="11sp"
     android:textStyle="italic" />
