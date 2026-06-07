@@ -68,7 +68,7 @@
             android:layout_height="40dp"
             android:padding="8dp"
             android:src="@drawable/ic_back"
-            android:contentDescription="Back"
+            android:contentDescription="返回"
             android:background="?attr/selectableItemBackgroundBorderless"
             app:tint="@color/white" />
 
@@ -88,37 +88,41 @@
         <TextView
             android:id="@+id/tvAsrEngine"
             android:layout_width="wrap_content"
-            android:layout_height="24dp"
+            android:layout_height="28dp"
+            android:minWidth="56dp"
             android:gravity="center"
             android:background="@drawable/bg_tts_engine_selector"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
+            android:foreground="?attr/selectableItemBackground"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
             android:text="Dash"
             android:textColor="#FFFFFFFF"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="点击切换ASR引擎"
-            android:layout_marginEnd="4dp" />
+            android:layout_marginEnd="6dp" />
 
         <!-- TTS引擎指示器 (可点击切换) -->
         <TextView
             android:id="@+id/tvTtsEngine"
             android:layout_width="wrap_content"
-            android:layout_height="24dp"
+            android:layout_height="28dp"
+            android:minWidth="56dp"
             android:gravity="center"
             android:background="@drawable/bg_tts_engine_selector"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
+            android:foreground="?attr/selectableItemBackground"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
             android:text="Qwen TTS"
             android:textColor="#FFFFFFFF"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:clickable="true"
             android:focusable="true"
             android:contentDescription="点击切换TTS引擎"
-            android:layout_marginEnd="4dp" />
+            android:layout_marginEnd="6dp" />
 
         <!-- Mute button -->
         <ImageView
@@ -127,7 +131,7 @@
             android:layout_height="40dp"
             android:padding="8dp"
             android:src="@drawable/ic_pause"
-            android:contentDescription="Mute"
+            android:contentDescription="静音"
             android:background="?attr/selectableItemBackgroundBorderless"
             app:tint="@color/white" />
 
@@ -138,7 +142,7 @@
             android:layout_height="40dp"
             android:padding="8dp"
             android:src="@drawable/ic_play"
-            android:contentDescription="Unmute"
+            android:contentDescription="取消静音"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:visibility="gone"
             app:tint="@color/white" />
