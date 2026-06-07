@@ -33,6 +33,23 @@ class AsrService {
     private var totalPacketsSent = 0
     private var lastDiagTimeMs = 0L
 
+    // [Phase 3.1] 自动重连（默认关闭，等根因明确后由 HybridAsrService 启用）
+    var enableAutoReconnect: Boolean = false
+    private var reconnectCount = 0
+    private val maxReconnectAttempts = 5
+    private val reconnectDelaysMs = longArrayOf(1000, 2000, 4000, 8000, 16000)  // 指数退避
+    private val reconnectHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var savedCallback: Callback? = null
+    private val reconnectRunnable = Runnable {
+        Log.i(TAG, "[DIAG] 自动重连触发: 第 $reconnectCount 次")
+        val cb = savedCallback
+        if (cb != null) {
+            isRunning = false
+            webSocket = null
+            start(cb)
+        }
+    }
+
     interface Callback {
         fun onReady()
         fun onPartialResult(text: String)
@@ -47,7 +64,9 @@ class AsrService {
         taskId = UUID.randomUUID().toString().replace("-", "").take(32)
         // [DIAG] 启动诊断
         val keyPreview = AiConfig.DASHSCOPE_API_KEY.take(8) + "..."
-        Log.i(TAG, "[DIAG] ASR.start: url=${AiConfig.ASR_WS_URL}, model=${AiConfig.ASR_MODEL}, taskId=$taskId, keyPrefix=$keyPreview")
+        Log.i(TAG, "[DIAG] ASR.start: url=${AiConfig.ASR_WS_URL}, model=${AiConfig.ASR_MODEL}, taskId=$taskId, keyPrefix=$keyPreview, reconnectCount=$reconnectCount")
+        // [Phase 3.1] 保存 callback 用于重连
+        savedCallback = callback
         totalBytesSent = 0
         totalPacketsSent = 0
         lastDiagTimeMs = System.currentTimeMillis()
@@ -61,6 +80,11 @@ class AsrService {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 // [DIAG] WebSocket 连接成功
                 Log.i(TAG, "[DIAG] WebSocket onOpen: HTTP ${response.code}, protocol=${response.protocol}")
+                // [Phase 3.1] 重连成功，重置计数
+                if (reconnectCount > 0) {
+                    Log.i(TAG, "[DIAG] 自动重连成功！累计 $reconnectCount 次重连")
+                    reconnectCount = 0
+                }
                 // 发送run-task指令
                 val runTask = JSONObject().apply {
                     put("header", JSONObject().apply {
@@ -149,6 +173,16 @@ class AsrService {
                     }
                 }
                 Log.e(TAG, "[DIAG] WebSocket onFailure 错误信息: $errorMsg")
+                // [Phase 3.1] 自动重连调度
+                if (enableAutoReconnect && reconnectCount < maxReconnectAttempts) {
+                    val delay = reconnectDelaysMs[reconnectCount.coerceAtMost(reconnectDelaysMs.size - 1)]
+                    Log.w(TAG, "[DIAG] 安排第 ${reconnectCount + 1} 次重连，${delay}ms 后")
+                    reconnectCount++
+                    reconnectHandler.removeCallbacks(reconnectRunnable)
+                    reconnectHandler.postDelayed(reconnectRunnable, delay)
+                } else if (reconnectCount >= maxReconnectAttempts) {
+                    Log.e(TAG, "[DIAG] 已达最大重连次数 ($maxReconnectAttempts)，放弃重连")
+                }
                 callback.onError(errorMsg)
             }
 
@@ -210,6 +244,10 @@ class AsrService {
     fun close() {
         // [DIAG] 完全关闭
         Log.i(TAG, "[DIAG] ASR.close: isRunning=$isRunning")
+        // [Phase 3.1] 关闭时取消重连调度
+        reconnectHandler.removeCallbacks(reconnectRunnable)
+        savedCallback = null
+        reconnectCount = 0
         stop()
         webSocket?.close(1000, "Client closing")
         webSocket = null
