@@ -33,6 +33,17 @@ public abstract class BaseActivity extends AppCompatActivity implements Handler.
         HandlerThread mHandlerThread = new HandlerThread(TAG);
         mHandlerThread.start();
         mHandler = new Handler(mHandlerThread.getLooper(), this);
+
+        // 设置状态栏颜色，防止Android 15 edge-to-edge导致白屏
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+                getWindow().setStatusBarColor(0xFF5A52D5); // primary_dark color
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "设置状态栏颜色失败", e);
+        }
     }
 
     @Override

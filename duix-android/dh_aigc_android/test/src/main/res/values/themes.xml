@@ -9,8 +9,6 @@
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryDark">@color/primary_dark</item>
         <item name="colorAccent">@color/primary</item>
-        <!-- Android 15 edge-to-edge: 不使用已弃用的半透明状态栏 -->
-        <!-- 使用 fitsSystemWindows 处理系统栏间距 -->
     </style>
 
 </resources>
