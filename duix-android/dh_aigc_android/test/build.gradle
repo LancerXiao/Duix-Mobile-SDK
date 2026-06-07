@@ -9,7 +9,7 @@ static def getCurrentTime() {
 
 android {
     namespace 'ai.guiji.duix.test'
-    compileSdk 34
+    compileSdk 35
 
     defaultConfig {
         applicationId "ai.guiji.duix.test"
