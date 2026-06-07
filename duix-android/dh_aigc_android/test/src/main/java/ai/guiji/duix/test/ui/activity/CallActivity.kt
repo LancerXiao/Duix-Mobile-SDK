@@ -51,6 +51,7 @@ class CallActivity : BaseActivity() {
         private const val PREFS_NAME = "duix_prefs"
         private const val KEY_TTS_ENGINE = "tts_engine"
         private const val KEY_ASR_ENGINE = "asr_engine"
+        private const val KEY_MIC_INTERACTION_MODE = "mic_interaction_mode"
     }
 
     enum class State {
@@ -91,6 +92,13 @@ class CallActivity : BaseActivity() {
     // 等 Phase 1.1 [DIAG] 反馈出根因后再接通具体分支
     private val asrFallbackManager = AsrFallbackManager()
     private var lastFallbackAction: AsrFallbackManager.Action? = null
+
+    // 麦克风交互模式 (Phase 1.4 骨架) - 默认 LONG_PRESS（豆包/小爱风格：按下开始、抬起结束）
+    // 也支持 PRESS_ONCE（再按一次结束，保留以兼容老用户习惯）
+    // 骨架阶段：仅加字段 + 长按分支 + 持久化
+    // 切换入口将在 Phase 1.4 接通时增加（如长按 toolbar 标题 5 次进调试模式）
+    private enum class MicInteractionMode { PRESS_ONCE, LONG_PRESS }
+    private var micInteractionMode = MicInteractionMode.LONG_PRESS
 
     // 状态管理
     private var currentState = State.IDLE
@@ -409,6 +417,8 @@ class CallActivity : BaseActivity() {
             loadTtsEnginePreference()
             // 恢复上次保存的 ASR 引擎选择 (Phase 1.2 骨架)
             loadAsrEnginePreference()
+            // 恢复上次保存的麦克风交互模式 (Phase 1.4 骨架)
+            loadMicInteractionMode()
             // 清空 fallback 状态显示 (Phase 1.3 骨架)
             clearFallbackStatus()
             // 初始化完成后自动开始监听，参考 Call Annie 即时响应设计
@@ -450,8 +460,8 @@ class CallActivity : BaseActivity() {
 
     private fun onMicButtonDown() {
         performHapticFeedback()
-        // [DIAG] 麦克风按下：当前状态
-        Log.i(TAG, "[DIAG] onMicButtonDown: currentState=$currentState, isDuiXReady=$isDuiXReady, userStoppedAsr=$userStoppedAsr, lastPartialText='$lastPartialText'")
+        // [DIAG] 麦克风按下：当前状态 + 交互模式
+        Log.i(TAG, "[DIAG] onMicButtonDown: currentState=$currentState, micMode=$micInteractionMode, isDuiXReady=$isDuiXReady, userStoppedAsr=$userStoppedAsr, lastPartialText='$lastPartialText'")
         when (currentState) {
             State.SPEAKING -> {
                 // 正在说话 -> 打断
@@ -462,9 +472,14 @@ class CallActivity : BaseActivity() {
                 startListening()
             }
             State.LISTENING -> {
-                // 已经在听了 -> 立即取消（用户主动停止录音）
-                Log.i(TAG, "[DIAG] 用户在录音中再次点击麦克风，立即取消")
-                stopListening()
+                // LONG_PRESS 模式下：按下不响应（抬起时才停）
+                // PRESS_ONCE 模式下：再按一次取消录音
+                if (micInteractionMode == MicInteractionMode.PRESS_ONCE) {
+                    Log.i(TAG, "[DIAG] PRESS_ONCE 模式：用户再按麦克风，立即取消")
+                    stopListening()
+                } else {
+                    Log.i(TAG, "[DIAG] LONG_PRESS 模式：录音中按下不响应（等抬起）")
+                }
             }
             State.THINKING -> {
                 // 思考中再次点击：不响应（避免打断 LLM），但提示一下
@@ -474,11 +489,18 @@ class CallActivity : BaseActivity() {
     }
 
     private fun onMicButtonUp() {
-        // [DIAG] 麦克风抬起：当前状态
-        Log.i(TAG, "[DIAG] onMicButtonUp: currentState=$currentState")
-        // 松开时如果在监听状态，停止监听
+        // [DIAG] 麦克风抬起：当前状态 + 交互模式
+        Log.i(TAG, "[DIAG] onMicButtonUp: currentState=$currentState, micMode=$micInteractionMode")
+        // 抬起时如果在监听状态：
+        //   LONG_PRESS 模式：立即停止（豆包风格）
+        //   PRESS_ONCE 模式：不响应（需再按一次才停）
         if (currentState == State.LISTENING) {
-            stopListening()
+            if (micInteractionMode == MicInteractionMode.LONG_PRESS) {
+                Log.i(TAG, "[DIAG] LONG_PRESS 模式：抬起停止录音")
+                stopListening()
+            } else {
+                Log.i(TAG, "[DIAG] PRESS_ONCE 模式：抬起不响应（等再按一次）")
+            }
         }
     }
 
@@ -1306,6 +1328,48 @@ class CallActivity : BaseActivity() {
         binding.tvFallbackStatus.text = "[ASR] $msg"
         binding.tvFallbackStatus.visibility = View.VISIBLE
         Log.i(TAG, "[DIAG] updateFallbackStatus: action=$action, msg='$msg'")
+    }
+
+    /**
+     * 恢复麦克风交互模式偏好（Phase 1.4 骨架）
+     * 默认 LONG_PRESS（豆包风格：按下开始、抬起结束）
+     */
+    private fun loadMicInteractionMode() {
+        try {
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val name = prefs.getString(KEY_MIC_INTERACTION_MODE, MicInteractionMode.LONG_PRESS.name)
+            val loaded = try { MicInteractionMode.valueOf(name!!) } catch (e: Exception) { MicInteractionMode.LONG_PRESS }
+            if (loaded != micInteractionMode) {
+                Log.i(TAG, "恢复麦克风交互模式: $name")
+                micInteractionMode = loaded
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "加载麦克风交互模式偏好失败", e)
+        }
+    }
+
+    /**
+     * 切换麦克风交互模式（Phase 1.4 接通阶段使用）
+     * 当前未接通：UI 入口未加（仅持久化逻辑就绪）
+     */
+    @Suppress("unused")
+    private fun cycleMicInteractionMode() {
+        performHapticFeedback()
+        val newMode = if (micInteractionMode == MicInteractionMode.LONG_PRESS) {
+            MicInteractionMode.PRESS_ONCE
+        } else {
+            MicInteractionMode.LONG_PRESS
+        }
+        micInteractionMode = newMode
+        try {
+            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_MIC_INTERACTION_MODE, newMode.name)
+                .apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "保存麦克风交互模式偏好失败", e)
+        }
+        showToast("麦克风模式: ${if (newMode == MicInteractionMode.LONG_PRESS) "长按说话" else "再按结束"}")
+        Log.i(TAG, "切换麦克风交互模式: $newMode")
     }
 
     @Suppress("DEPRECATION")
