@@ -1188,23 +1188,27 @@ class CallActivity : BaseActivity() {
             State.SPEAKING -> "点击打断"
         }
 
-        // 底部状态图标
+        // 底部状态图标 (Phase 2.3 加大可视权重)
         binding.stateIndicatorRow.visibility = if (isDuiXReady) View.VISIBLE else View.GONE
         when (currentState) {
             State.IDLE -> {
                 binding.ivStateIcon.setImageResource(R.drawable.ic_mic)
+                binding.ivStateIcon.setColorFilter(0xFFCCCCCC.toInt())  // 灰
                 binding.tvStateLabel.text = "就绪"
             }
             State.LISTENING -> {
                 binding.ivStateIcon.setImageResource(R.drawable.ic_mic)
+                binding.ivStateIcon.setColorFilter(0xFF4CAF50.toInt())  // 绿
                 binding.tvStateLabel.text = "聆听中"
             }
             State.THINKING -> {
                 binding.ivStateIcon.setImageResource(R.drawable.ic_info)
+                binding.ivStateIcon.setColorFilter(0xFF2196F3.toInt())  // 蓝
                 binding.tvStateLabel.text = "思考中"
             }
             State.SPEAKING -> {
                 binding.ivStateIcon.setImageResource(R.drawable.ic_play)
+                binding.ivStateIcon.setColorFilter(0xFFE91E63.toInt())  // 粉
                 binding.tvStateLabel.text = "播放中"
             }
         }

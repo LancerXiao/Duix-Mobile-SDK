@@ -244,31 +244,37 @@
         android:paddingBottom="16dp"
         app:layout_constraintBottom_toBottomOf="parent">
 
-        <!-- 当前状态图标行 -->
+        <!-- 当前状态图标行 (Phase 2.3 加大可视权重) -->
         <LinearLayout
             android:id="@+id/stateIndicatorRow"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
+            android:background="@drawable/bg_state_indicator"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
             android:layout_marginBottom="4dp"
             android:visibility="gone">
 
             <ImageView
                 android:id="@+id/ivStateIcon"
-                android:layout_width="16dp"
-                android:layout_height="16dp"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
                 android:src="@drawable/ic_mic"
                 app:tint="@color/white"
-                android:layout_marginEnd="6dp" />
+                android:layout_marginEnd="8dp" />
 
             <TextView
                 android:id="@+id/tvStateLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="就绪"
-                android:textColor="#CCFFFFFF"
-                android:textSize="12sp" />
+                android:textColor="#EEFFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
 
         </LinearLayout>
 
