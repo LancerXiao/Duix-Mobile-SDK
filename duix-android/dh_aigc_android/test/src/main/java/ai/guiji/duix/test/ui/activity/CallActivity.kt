@@ -42,6 +42,7 @@ class CallActivity : BaseActivity() {
         IDLE, LISTENING, THINKING, SPEAKING
     }
 
+    private var modelName = ""
     private var modelUrl = ""
     private var debug = false
 
@@ -86,8 +87,40 @@ class CallActivity : BaseActivity() {
         binding = ActivityCallBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        modelUrl = intent.getStringExtra("modelUrl") ?: ""
+        modelName = intent.getStringExtra("modelName") ?: ""
         debug = intent.getBooleanExtra("debug", false)
+        // 根据 modelName 构造完整的模型 URL（DUIX SDK 会从中提取 dirName）
+        modelUrl = when (modelName) {
+            ai.guiji.duix.test.service.ModelManager.MODEL_NAME_XIAOBEN ->
+                ai.guiji.duix.test.service.ModelManager.MODEL_XIAOBEN_URL
+            ai.guiji.duix.test.service.ModelManager.MODEL_NAME_AIRUIKE ->
+                ai.guiji.duix.test.service.ModelManager.MODEL_AIRUIKE_URL
+            else -> {
+                // 兼容旧的 modelUrl 参数
+                val legacy = intent.getStringExtra("modelUrl") ?: ""
+                if (legacy.isNotEmpty()) legacy else modelName
+            }
+        }
+
+        // 安全检查：模型未下载时直接返回
+        if (modelUrl.isEmpty() || modelName.isEmpty()) {
+            Log.e(TAG, "未指定模型: modelName=$modelName, modelUrl=$modelUrl")
+            showLoadingError("未指定模型", "请返回主页选择数字人")
+            return
+        }
+
+        // 再次确认模型已下载
+        val modelManager = ai.guiji.duix.test.service.ModelManager.getInstance()
+        if (!modelManager.isBaseConfigReady(mContext)) {
+            Log.e(TAG, "基础资源未下载")
+            showLoadingError("基础资源未下载", "请返回主页下载基础资源")
+            return
+        }
+        if (!modelManager.isModelReady(mContext, modelName)) {
+            Log.e(TAG, "模型未下载: $modelName")
+            showLoadingError("模型未下载", "请返回主页下载模型: $modelName")
+            return
+        }
 
         // 在 super.onCreate() 之后 mContext 已赋值，安全初始化依赖 Context 的服务
         try {
