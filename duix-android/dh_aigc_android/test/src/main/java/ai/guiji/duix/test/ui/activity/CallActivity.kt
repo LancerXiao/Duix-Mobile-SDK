@@ -39,6 +39,11 @@ class CallActivity : BaseActivity() {
     companion object {
         const val GL_CONTEXT_VERSION = 2
         private const val AUTO_LISTEN_DELAY_MS = 1200L
+        // 音频采样率常量
+        // Qwen TTS (qwen3-tts-flash-realtime) 固定输出 24kHz PCM
+        private const val QWEN_TTS_SAMPLE_RATE = 24000
+        // DUIX SDK 内部使用 16kHz（见 duix-sdk/src/main/cpp/dhmfcc/mfcc.cpp 的 MFCC_RATE = 16000）
+        private const val DUIX_SAMPLE_RATE = 16000
     }
 
     enum class State {
@@ -621,7 +626,8 @@ class CallActivity : BaseActivity() {
 
     /**
      * 使用 Qwen TTS (qwen3-tts-flash-realtime) 合成语音
-     * 返回的是 PCM 24kHz mono 16bit 数据
+     * 收到的是 PCM 24kHz mono 16bit，必须重采样到 16kHz 后才能推送给 DUIX
+     * （DUIX SDK 内部使用 16kHz，MFCC_RATE = 16000）
      */
     private fun synthesizeWithQwenTts(text: String, currentDuix: DUIX) {
         Log.i(TAG, "尝试 Qwen TTS 合成: ${text.take(30)}...")
@@ -629,16 +635,23 @@ class CallActivity : BaseActivity() {
         try {
             qwenTtsService.synthesize(text, AiConfig.TTS_DEFAULT_VOICE, object : QwenTtsService.Callback {
                 override fun onAudioData(pcmData: ByteArray) {
-                    Log.i(TAG, "Qwen TTS 返回PCM数据: ${pcmData.size} bytes")
+                    // Qwen TTS 输出 PCM 24kHz，DUIX 期望 16kHz，必须重采样
+                    val resampledPcm = try {
+                        PcmResampler.resample(pcmData, QWEN_TTS_SAMPLE_RATE, DUIX_SAMPLE_RATE)
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "Qwen TTS PCM 重采样失败", e)
+                        pcmData // 重采样失败时仍尝试推送，让 DUIX 内部处理
+                    }
+                    Log.i(TAG, "Qwen TTS 返回PCM: ${pcmData.size} bytes (24kHz) -> ${resampledPcm.size} bytes (16kHz)")
                     Thread {
                         try {
                             if (!pushedOnce[0]) {
                                 currentDuix.startPush()
                                 pushedOnce[0] = true
                             }
-                            // 写入 PCM 数据（Qwen TTS 输出 PCM 24kHz mono 16bit）
+                            // 写入 PCM 数据（16kHz mono 16bit，DUIX 要求）
                             try {
-                                currentDuix.pushPcm(pcmData)
+                                currentDuix.pushPcm(resampledPcm)
                             } catch (e: Throwable) {
                                 Log.e(TAG, "pushPcm 异常", e)
                             }
@@ -671,6 +684,7 @@ class CallActivity : BaseActivity() {
                         // fallback 到 Edge TTS
                         currentTtsEngine = TtsEngine.EDGE_TTS
                         showToast("Qwen TTS失败，使用Edge TTS: $error")
+                        updateUI()
                         synthesizeWithEdgeTts(text, currentDuix)
                     }
                 }
@@ -680,6 +694,7 @@ class CallActivity : BaseActivity() {
             // fallback
             runOnUiThread {
                 currentTtsEngine = TtsEngine.EDGE_TTS
+                updateUI()
                 synthesizeWithEdgeTts(text, currentDuix)
             }
         }

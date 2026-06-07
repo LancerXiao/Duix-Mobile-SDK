@@ -8,7 +8,6 @@ import android.os.Build
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.ByteBuffer
 
 /**
  * MP3 转 PCM 工具类
@@ -162,87 +161,15 @@ class Mp3ToPcmConverter(private val context: Context) {
         }
 
         val monoData = if (sourceChannels > 1) {
-            convertToMono(data, sourceChannels)
+            PcmResampler.toMono(data, sourceChannels)
         } else {
             data
         }
 
-        val resampledData = if (sourceSampleRate != TARGET_SAMPLE_RATE) {
-            resample(monoData, sourceSampleRate, TARGET_SAMPLE_RATE)
+        return if (sourceSampleRate != TARGET_SAMPLE_RATE) {
+            PcmResampler.resample(monoData, sourceSampleRate, TARGET_SAMPLE_RATE)
         } else {
             monoData
         }
-
-        return resampledData
-    }
-
-    /**
-     * 多声道转单声道
-     */
-    private fun convertToMono(data: ByteArray, channels: Int): ByteArray {
-        val bytesPerSample = 2
-        val frameSize = bytesPerSample * channels
-        val numFrames = data.size / frameSize
-        val monoData = ByteArray(numFrames * bytesPerSample)
-
-        for (i in 0 until numFrames) {
-            var sum = 0L
-            for (ch in 0 until channels) {
-                val offset = i * frameSize + ch * bytesPerSample
-                if (offset + 1 < data.size) {
-                    val sample = ((data[offset + 1].toInt() and 0xFF) shl 8) or (data[offset].toInt() and 0xFF)
-                    val signedSample = if (sample > 32767) sample - 65536 else sample
-                    sum += signedSample
-                }
-            }
-            val avgSample = (sum / channels).toInt().toShort()
-            monoData[i * 2] = (avgSample.toInt() and 0xFF).toByte()
-            monoData[i * 2 + 1] = ((avgSample.toInt() shr 8) and 0xFF).toByte()
-        }
-
-        return monoData
-    }
-
-    /**
-     * 线性插值重采样
-     */
-    private fun resample(data: ByteArray, sourceRate: Int, targetRate: Int): ByteArray {
-        val numInputSamples = data.size / 2
-        if (numInputSamples == 0) return ByteArray(0)
-
-        val ratio = numInputSamples.toDouble() * targetRate / sourceRate
-        val numOutputSamples = ratio.toInt()
-        if (numOutputSamples == 0) return ByteArray(0)
-
-        val outputData = ByteArray(numOutputSamples * 2)
-
-        val inputSamples = ShortArray(numInputSamples)
-        for (i in 0 until numInputSamples) {
-            val offset = i * 2
-            if (offset + 1 < data.size) {
-                val low = data[offset].toInt() and 0xFF
-                val high = data[offset + 1].toInt() and 0xFF
-                inputSamples[i] = ((high shl 8) or low).toShort()
-            }
-        }
-
-        for (i in 0 until numOutputSamples) {
-            val srcIndex = i.toDouble() * sourceRate / targetRate
-            val srcIndexInt = srcIndex.toInt()
-            val fraction = srcIndex - srcIndexInt
-
-            val sample = if (srcIndexInt + 1 < numInputSamples) {
-                (inputSamples[srcIndexInt] * (1.0 - fraction) + inputSamples[srcIndexInt + 1] * fraction).toInt().toShort()
-            } else if (srcIndexInt < numInputSamples) {
-                inputSamples[srcIndexInt]
-            } else {
-                0
-            }
-
-            outputData[i * 2] = (sample.toInt() and 0xFF).toByte()
-            outputData[i * 2 + 1] = ((sample.toInt() shr 8) and 0xFF).toByte()
-        }
-
-        return outputData
     }
 }
