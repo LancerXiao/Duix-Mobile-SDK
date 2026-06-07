@@ -61,6 +61,15 @@ class MainActivity : Activity() {
     private var mBtnDownloadXiaoben: Button? = null
     private var mBtnDownloadAiruike: Button? = null
 
+    /**
+     * 模型卡片数据
+     */
+    private data class ModelCardViews(
+        val card: LinearLayout,
+        val statusView: TextView,
+        val downloadBtn: Button
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         Log.i(TAG, "===== MainActivity.onCreate 开始 =====")
         try {
@@ -162,25 +171,27 @@ class MainActivity : Activity() {
         }
 
         // 模型1卡片 - 小本
-        mCardXiaoben = createModelCard(
+        val xiaobenCard = createModelCard(
             name = "小本 (bend3)",
             desc = "数字人模型 1"
         ) {
             onModelCardClicked(ModelManager.MODEL_NAME_XIAOBEN, ModelManager.MODEL_XIAOBEN_URL)
         }
-        mStatusXiaoben = mCardXiaoben!!.findViewWithTag("status")
-        mBtnDownloadXiaoben = mCardXiaoben!!.findViewWithTag("download_btn")
+        mCardXiaoben = xiaobenCard.card
+        mStatusXiaoben = xiaobenCard.statusView
+        mBtnDownloadXiaoben = xiaobenCard.downloadBtn
         scrollContent.addView(mCardXiaoben)
 
         // 模型2卡片 - 艾瑞克
-        mCardAiruike = createModelCard(
+        val airuikeCard = createModelCard(
             name = "艾瑞克 (airuike)",
             desc = "数字人模型 2"
         ) {
             onModelCardClicked(ModelManager.MODEL_NAME_AIRUIKE, ModelManager.MODEL_AIRUIKE_URL)
         }
-        mStatusAiruike = mCardAiruike!!.findViewWithTag("status")
-        mBtnDownloadAiruike = mCardAiruike!!.findViewWithTag("download_btn")
+        mCardAiruike = airuikeCard.card
+        mStatusAiruike = airuikeCard.statusView
+        mBtnDownloadAiruike = airuikeCard.downloadBtn
         scrollContent.addView(mCardAiruike)
 
         // 下载进度区（默认隐藏）
@@ -220,7 +231,7 @@ class MainActivity : Activity() {
         name: String,
         desc: String,
         onClick: () -> Unit
-    ): LinearLayout {
+    ): ModelCardViews {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(CARD_COLOR)
@@ -257,7 +268,6 @@ class MainActivity : Activity() {
             setTextColor(CARD_TEXT_COLOR)
         }
         val statusView = TextView(this).apply {
-            tag = "status"
             text = "检查中..."
             textSize = 12f
             setTextColor(0xFF6B7280.toInt())
@@ -276,7 +286,6 @@ class MainActivity : Activity() {
 
         // 底部行：下载按钮
         val btnDownload = Button(this).apply {
-            tag = "download_btn"
             text = "下载模型"
             textSize = 14f
             setTextColor(TEXT_COLOR)
@@ -298,7 +307,7 @@ class MainActivity : Activity() {
             setMargins(0, 0, 0, 12)
         }
         card.layoutParams = cardParams
-        return card
+        return ModelCardViews(card, statusView, btnDownload)
     }
 
     private fun createDownloadSection(): LinearLayout {
