@@ -8,6 +8,7 @@ import ai.guiji.duix.test.ui.dialog.LoadingDialog
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.Toast
 import java.io.File
@@ -20,6 +21,7 @@ class MainActivity : BaseActivity() {
     private var mLastProgress = 0
 
     companion object {
+        private const val TAG = "MainActivity"
         private const val BASE_CONFIG_URL = "http://114.215.183.45/downloads/duix/models/gj_dh_res.zip"
 
         data class ModelInfo(
@@ -115,8 +117,33 @@ class MainActivity : BaseActivity() {
     }
 
     private fun refreshModelStatus() {
+        val duixDir = mContext.getExternalFilesDir("duix")?.absolutePath ?: ""
+
+        // 检查并修复基础配置标记文件
+        val baseDir = java.io.File(duixDir, "model/gj_dh_res")
+        val baseTag = java.io.File(duixDir, "model/tmp/gj_dh_res")
+        Log.i(TAG, "基础配置检测: 目录=${baseDir.exists()}, 标记=${baseTag.exists()}")
+        if (baseDir.exists() && !baseTag.exists()) {
+            Log.i(TAG, "基础配置目录存在但标记文件缺失，自动创建")
+            try { baseTag.mkdirs() } catch (e: Exception) { Log.e(TAG, "创建失败: ${e.message}") }
+        }
+
+        // 检查并修复每个模型的标记文件
         for ((index, model) in MODELS.withIndex()) {
+            val dirName = model.url.substring(model.url.lastIndexOf("/") + 1).replace(".zip", "")
+            val modelDir = java.io.File(duixDir, "model/$dirName")
+            val modelTag = java.io.File(duixDir, "model/tmp/$dirName")
+
+            Log.i(TAG, "模型[${model.name}] 检测: 目录=${modelDir.exists()}, 标记=${modelTag.exists()}")
+
+            // 如果模型目录存在但标记文件不存在，自动创建标记文件
+            if (modelDir.exists() && !modelTag.exists()) {
+                Log.i(TAG, "模型[${model.name}] 目录存在但标记缺失，自动创建")
+                try { modelTag.mkdirs() } catch (e: Exception) { Log.e(TAG, "创建失败: ${e.message}") }
+            }
+
             val isDownloaded = VirtualModelUtil.checkModel(mContext, model.url)
+            Log.i(TAG, "模型[${model.name}] 状态: ${if (isDownloaded) "已下载" else "未下载"}")
             updateModelStatus(index, isDownloaded)
         }
     }
@@ -139,27 +166,44 @@ class MainActivity : BaseActivity() {
 
     private fun play() {
         if (mSelectedModelIndex < 0) {
-            Toast.makeText(mContext, R.string.model_url_cannot_be_empty, Toast.LENGTH_SHORT).show()
+            Toast.makeText(mContext, "请先选择一个数字人模型", Toast.LENGTH_SHORT).show()
             return
         }
+
+        val selectedModel = MODELS[mSelectedModelIndex]
+        Log.i(TAG, "点击播放: 模型=${selectedModel.name}, URL=${selectedModel.url}")
+
+        // 先刷新模型状态（自动修复标记文件）
+        refreshModelStatus()
+
         mDebugMode = binding.switchDebug.isChecked
         checkBaseConfig()
     }
 
     private fun checkBaseConfig() {
-        showLoadingDialog(getString(R.string.model_checking))
+        showLoadingDialog("检查基础配置...")
+        Log.i(TAG, "开始检查基础配置(gj_dh_res)")
+
         if (VirtualModelUtil.checkBaseConfig(mContext)) {
+            Log.i(TAG, "基础配置已就绪")
             mLoadingDialog?.dismiss()
             checkModel()
         } else {
+            Log.i(TAG, "基础配置缺失，开始下载")
+            Toast.makeText(mContext, "基础配置缺失，正在下载...", Toast.LENGTH_SHORT).show()
             baseConfigDownload()
         }
     }
 
     private fun checkModel() {
+        Log.i(TAG, "检查模型: $mModelUrl")
         if (VirtualModelUtil.checkModel(mContext, mModelUrl)) {
+            Log.i(TAG, "模型已就绪，跳转到播放页面")
             jumpPlayPage()
         } else {
+            val dirName = mModelUrl.substring(mModelUrl.lastIndexOf("/") + 1).replace(".zip", "")
+            Log.i(TAG, "模型未就绪，开始下载: $dirName")
+            Toast.makeText(mContext, "模型(${dirName})需要下载，正在开始...", Toast.LENGTH_SHORT).show()
             modelDownload()
         }
     }
@@ -235,9 +279,9 @@ class MainActivity : BaseActivity() {
 
             override fun onDownloadFail(url: String?, code: Int, msg: String?) {
                 runOnUiThread {
-                    mLoadingDialog?.showError(
-                        getString(R.string.base_config_download_error, msg ?: "未知错误")
-                    ) {
+                    val errorMsg = "基础配置下载失败(错误码:$code): ${msg ?: "未知错误"}"
+                    Log.e(TAG, errorMsg)
+                    mLoadingDialog?.showError(errorMsg) {
                         baseConfigDownload()
                     }
                 }
@@ -295,9 +339,9 @@ class MainActivity : BaseActivity() {
 
             override fun onDownloadFail(url: String?, code: Int, msg: String?) {
                 runOnUiThread {
-                    mLoadingDialog?.showError(
-                        getString(R.string.model_download_error, msg ?: "未知错误")
-                    ) {
+                    val errorMsg = "模型下载失败(错误码:$code): ${msg ?: "未知错误"}"
+                    Log.e(TAG, errorMsg)
+                    mLoadingDialog?.showError(errorMsg) {
                         modelDownload()
                     }
                 }
