@@ -122,20 +122,34 @@ class HybridAsrService(private val context: Context) {
                 } catch (e: Exception) {
                     Log.w(TAG, "停止AudioRecord异常", e)
                 }
-                // 错误信息透传给上层，便于用户诊断
-                // 只有Android ASR可用且DashScope完全无法连接时才fallback
-                if (error.contains("HTTP 401") || error.contains("HTTP 403") || error.contains("InvalidApiKey")) {
-                    // API key 问题，不要再尝试Android ASR（小米设备会提示"不支持"）
-                    val cb = currentCallback
-                    mainHandler.post { cb?.onError("语音服务认证失败，请联系管理员检查API Key") }
-                } else if (androidAsr != null && android.speech.SpeechRecognizer.isRecognitionAvailable(context) && currentCallback != null) {
-                    // 其他网络错误，尝试 fallback 到 Android
-                    Log.i(TAG, "fallback到Android ASR")
-                    val cb = currentCallback
-                    if (cb != null) startAndroidListening(cb)
-                } else {
-                    val cb = currentCallback
-                    mainHandler.post { cb?.onError("语音识别失败: $error，请使用文字输入") }
+                // [Phase 1.3 接通] 用 AsrFallbackManager 决策下一步动作
+                val androidAvailable = androidAsr != null &&
+                    android.speech.SpeechRecognizer.isRecognitionAvailable(context)
+                val currentEngine = if (useDashscope) "dashscope" else "android"
+                val action = AsrFallbackManager().decide(
+                    AsrFallbackManager.Context(
+                        errorMessage = error,
+                        isAndroidAsrAvailable = androidAvailable,
+                        currentAsrEngine = currentEngine
+                    )
+                )
+                val cb = currentCallback
+                when (action) {
+                    AsrFallbackManager.Action.DISABLE_ASR_USE_TEXT -> {
+                        mainHandler.post { cb?.onError(AsrFallbackManager().getUserMessage(action)) }
+                    }
+                    AsrFallbackManager.Action.FALLBACK_TO_ANDROID -> {
+                        Log.i(TAG, "fallback到Android ASR (决策=$action)")
+                        if (cb != null) startAndroidListening(cb)
+                    }
+                    AsrFallbackManager.Action.RETRY_AUTO_LISTEN -> {
+                        // 不上报错误，调用方会在 IDLE 时自动重听
+                        Log.i(TAG, "NoMatch 类错误，自动重试 (决策=$action)")
+                    }
+                    AsrFallbackManager.Action.PROMPT_USE_TEXT,
+                    AsrFallbackManager.Action.SHOW_ERROR_TO_USER -> {
+                        mainHandler.post { cb?.onError(AsrFallbackManager().getUserMessage(action)) }
+                    }
                 }
             }
 
