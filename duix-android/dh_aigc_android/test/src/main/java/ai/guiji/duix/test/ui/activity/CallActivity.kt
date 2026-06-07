@@ -49,6 +49,7 @@ class CallActivity : BaseActivity() {
         // SharedPreferences
         private const val PREFS_NAME = "duix_prefs"
         private const val KEY_TTS_ENGINE = "tts_engine"
+        private const val KEY_ASR_ENGINE = "asr_engine"
     }
 
     enum class State {
@@ -77,6 +78,13 @@ class CallActivity : BaseActivity() {
     private val ttsEngineCycle = listOf(TtsEngine.QWEN_TTS, TtsEngine.EDGE_TTS, TtsEngine.ANDROID_TTS)
     private var currentTtsEngine = TtsEngine.QWEN_TTS
     private var edgeTtsFailCount = 0
+
+    // ASR 引擎选择 (Phase 1.2 骨架) - 顶部可见+可点击循环切换+持久化
+    // 骨架阶段：仅 UI/持久化，未接通 HybridAsrService.PREFERRED_ENGINE
+    // 等 Phase 1.1 [DIAG] 实测定位根因后再接通，避免破坏当前诊断链路
+    private enum class AsrEngine { DASHSCOPE, ANDROID, DISABLED }
+    private val asrEngineCycle = listOf(AsrEngine.DASHSCOPE, AsrEngine.ANDROID, AsrEngine.DISABLED)
+    private var currentAsrEngine = AsrEngine.DASHSCOPE
 
     // 状态管理
     private var currentState = State.IDLE
@@ -224,6 +232,11 @@ class CallActivity : BaseActivity() {
         // TTS 引擎选择 - 点击循环切换 Qwen TTS → Edge TTS → Android TTS → Qwen TTS
         binding.tvTtsEngine.setOnClickListener {
             cycleTtsEngine()
+        }
+
+        // ASR 引擎选择 (Phase 1.2 骨架) - 点击循环切换 DashScope → Android → Disabled
+        binding.tvAsrEngine.setOnClickListener {
+            cycleAsrEngine()
         }
 
         // 麦克风按钮 - 长按说话
@@ -388,6 +401,8 @@ class CallActivity : BaseActivity() {
             showToast("数字人已就绪")
             // 恢复上次保存的 TTS 引擎选择
             loadTtsEnginePreference()
+            // 恢复上次保存的 ASR 引擎选择 (Phase 1.2 骨架)
+            loadAsrEnginePreference()
             // 初始化完成后自动开始监听，参考 Call Annie 即时响应设计
             scheduleAutoListen()
         }
@@ -1039,6 +1054,13 @@ class CallActivity : BaseActivity() {
             TtsEngine.ANDROID_TTS -> "Android TTS"
         }
 
+        // ASR引擎指示器 (Phase 1.2 骨架)
+        binding.tvAsrEngine.text = when (currentAsrEngine) {
+            AsrEngine.DASHSCOPE -> "Dash"
+            AsrEngine.ANDROID -> "Android"
+            AsrEngine.DISABLED -> "Off"
+        }
+
         // 麦克风按钮标签
         binding.tvMicLabel.text = when (currentState) {
             State.IDLE -> "按住说话"
@@ -1201,6 +1223,55 @@ class CallActivity : BaseActivity() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "加载 TTS 引擎偏好失败", e)
+        }
+    }
+
+    /**
+     * 循环切换 ASR 引擎（Phase 1.2 骨架）
+     * DashScope → Android → Disabled → DashScope
+     * 骨架阶段：仅 UI/持久化，**不接通** HybridAsrService.PREFERRED_ENGINE
+     * 等 Phase 1.1 [DIAG] 实测定位根因后再决定接通逻辑（避免破坏当前诊断链路）
+     */
+    private fun cycleAsrEngine() {
+        performHapticFeedback()
+        val currentIndex = asrEngineCycle.indexOf(currentAsrEngine)
+        val nextIndex = (currentIndex + 1) % asrEngineCycle.size
+        val newEngine = asrEngineCycle[nextIndex]
+        currentAsrEngine = newEngine
+        saveAsrEnginePreference(newEngine)
+        showToast("ASR: ${getAsrEngineDisplayName(newEngine)} (骨架阶段未接通 HybridAsrService)")
+        updateUI()
+        updateStatus("ASR: ${getAsrEngineDisplayName(newEngine)}")
+    }
+
+    private fun getAsrEngineDisplayName(engine: AsrEngine): String = when (engine) {
+        AsrEngine.DASHSCOPE -> "DashScope"
+        AsrEngine.ANDROID -> "Android"
+        AsrEngine.DISABLED -> "Disabled"
+    }
+
+    private fun saveAsrEnginePreference(engine: AsrEngine) {
+        try {
+            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_ASR_ENGINE, engine.name)
+                .apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "保存 ASR 引擎偏好失败", e)
+        }
+    }
+
+    private fun loadAsrEnginePreference() {
+        try {
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val name = prefs.getString(KEY_ASR_ENGINE, AsrEngine.DASHSCOPE.name)
+            val loaded = try { AsrEngine.valueOf(name!!) } catch (e: Exception) { AsrEngine.DASHSCOPE }
+            if (loaded != currentAsrEngine) {
+                Log.i(TAG, "恢复 ASR 引擎偏好: $name")
+                currentAsrEngine = loaded
+                updateUI()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "加载 ASR 引擎偏好失败", e)
         }
     }
 
