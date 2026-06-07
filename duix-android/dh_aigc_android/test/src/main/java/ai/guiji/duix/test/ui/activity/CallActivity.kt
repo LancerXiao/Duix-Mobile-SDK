@@ -87,16 +87,32 @@ class CallActivity : BaseActivity() {
         debug = intent.getBooleanExtra("debug", false)
 
         // 在 super.onCreate() 之后 mContext 已赋值，安全初始化依赖 Context 的服务
-        asrService = AndroidAsrService(mContext)
-        asrService.create()
-        mp3ToPcmConverter = Mp3ToPcmConverter(mContext)
-        androidTtsService = AndroidTtsService(mContext)
-        androidTtsService.init()
+        try {
+            asrService = AndroidAsrService(mContext)
+            asrService.create()
+        } catch (e: Exception) {
+            Log.e(TAG, "初始化ASR服务失败", e)
+        }
+        try {
+            mp3ToPcmConverter = Mp3ToPcmConverter(mContext)
+        } catch (e: Exception) {
+            Log.e(TAG, "初始化MP3转换器失败", e)
+        }
+        try {
+            androidTtsService = AndroidTtsService(mContext)
+            androidTtsService.init()
+        } catch (e: Exception) {
+            Log.e(TAG, "初始化Android TTS服务失败", e)
+        }
 
         // 初始化时显示全屏 loading
         showLoading("正在加载...")
 
-        Glide.with(mContext).load("file:///android_asset/bg/bg1.png").into(binding.ivBg)
+        try {
+            Glide.with(mContext).load("file:///android_asset/bg/bg1.png").into(binding.ivBg)
+        } catch (e: Exception) {
+            Log.e(TAG, "加载背景图失败", e)
+        }
 
         binding.glTextureView.setEGLContextClientVersion(GL_CONTEXT_VERSION)
         binding.glTextureView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
@@ -173,12 +189,23 @@ class CallActivity : BaseActivity() {
         }
 
         // 初始化渲染器
-        mDUIXRender = DUIXRenderer(mContext, binding.glTextureView)
-        binding.glTextureView.setRenderer(mDUIXRender)
-        binding.glTextureView.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
+        try {
+            mDUIXRender = DUIXRenderer(mContext, binding.glTextureView)
+            binding.glTextureView.setRenderer(mDUIXRender)
+            binding.glTextureView.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
+        } catch (e: Exception) {
+            Log.e(TAG, "初始化渲染器失败", e)
+            showLoadingError("渲染器初始化失败", e.message ?: "未知错误")
+            return
+        }
 
         // 初始化DUIX
-        initDuiX()
+        try {
+            initDuiX()
+        } catch (e: Exception) {
+            Log.e(TAG, "初始化DUIX失败", e)
+            showLoadingError("初始化失败", e.message ?: "未知错误")
+        }
     }
 
     private fun initDuiX() {
@@ -354,6 +381,12 @@ class CallActivity : BaseActivity() {
     @SuppressLint("SetTextI18n")
     private fun doStartListening() {
         if (currentState == State.LISTENING) return
+        if (!::asrService.isInitialized) {
+            currentState = State.IDLE
+            updateStatus("语音识别未就绪")
+            updateUI()
+            return
+        }
         currentState = State.LISTENING
         updateStatus("聆听中...")
         updateUI()
@@ -404,6 +437,7 @@ class CallActivity : BaseActivity() {
 
     private fun stopListening() {
         if (currentState != State.LISTENING) return
+        if (!::asrService.isInitialized) return
         try {
             asrService.stopListening()
         } catch (e: Exception) {
@@ -503,6 +537,9 @@ class CallActivity : BaseActivity() {
                             currentDuix.startPush()
                             var totalPcmBytes = 0L
                             var pcmChunkCount = 0
+                            if (!::mp3ToPcmConverter.isInitialized) {
+                                throw RuntimeException("MP3转换器未初始化")
+                            }
                             mp3ToPcmConverter.convert(mp3Data, object : Mp3ToPcmConverter.Callback {
                                 override fun onPcmData(pcmData: ByteArray) {
                                     pcmChunkCount++
@@ -590,7 +627,7 @@ class CallActivity : BaseActivity() {
      * 使用 Android 原生 TTS 合成语音 -> WAV 转 PCM -> 推送给 DUIX 数字人
      */
     private fun synthesizeWithAndroidTts(text: String, currentDuix: DUIX) {
-        if (!androidTtsService.isReady()) {
+        if (!::androidTtsService.isInitialized || !androidTtsService.isReady()) {
             Log.e(TAG, "Android TTS 未初始化，无法合成语音")
             runOnUiThread {
                 updateStatus("语音不可用")
@@ -679,7 +716,7 @@ class CallActivity : BaseActivity() {
             Log.e(TAG, "停止Edge TTS异常", e)
         }
         try {
-            androidTtsService.stop()
+            if (::androidTtsService.isInitialized) androidTtsService.stop()
         } catch (e: Exception) {
             Log.e(TAG, "停止Android TTS异常", e)
         }
@@ -738,54 +775,66 @@ class CallActivity : BaseActivity() {
         binding.stateIndicatorRow.visibility = if (isDuiXReady) View.VISIBLE else View.GONE
         when (currentState) {
             State.IDLE -> {
-                binding.ivStateIcon.setImageResource(android.R.drawable.ic_btn_speak_now)
+                binding.ivStateIcon.setImageResource(R.drawable.ic_mic)
                 binding.tvStateLabel.text = "就绪"
             }
             State.LISTENING -> {
-                binding.ivStateIcon.setImageResource(android.R.drawable.ic_btn_speak_now)
+                binding.ivStateIcon.setImageResource(R.drawable.ic_mic)
                 binding.tvStateLabel.text = "聆听中"
             }
             State.THINKING -> {
-                binding.ivStateIcon.setImageResource(android.R.drawable.ic_menu_info_details)
+                binding.ivStateIcon.setImageResource(R.drawable.ic_info)
                 binding.tvStateLabel.text = "思考中"
             }
             State.SPEAKING -> {
-                binding.ivStateIcon.setImageResource(android.R.drawable.ic_media_play)
+                binding.ivStateIcon.setImageResource(R.drawable.ic_play)
                 binding.tvStateLabel.text = "播放中"
             }
         }
 
         // 麦克风按钮背景
-        binding.btnMic.background = when (currentState) {
-            State.LISTENING -> {
-                binding.recordingPulseOuter.visibility = View.VISIBLE
-                binding.recordingPulseInner.visibility = View.VISIBLE
-                binding.recordingPulseOuter.startAnimation(
-                    AnimationUtils.loadAnimation(this, R.anim.pulse_recording)
-                )
-                getDrawable(R.drawable.bg_mic_recording)
+        try {
+            binding.btnMic.background = when (currentState) {
+                State.LISTENING -> {
+                    binding.recordingPulseOuter.visibility = View.VISIBLE
+                    binding.recordingPulseInner.visibility = View.VISIBLE
+                    try {
+                        binding.recordingPulseOuter.startAnimation(
+                            AnimationUtils.loadAnimation(this, R.anim.pulse_recording)
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "加载录音动画失败", e)
+                    }
+                    getDrawable(R.drawable.bg_mic_recording)
+                }
+                State.SPEAKING -> {
+                    binding.recordingPulseOuter.visibility = View.GONE
+                    binding.recordingPulseInner.visibility = View.GONE
+                    binding.recordingPulseOuter.clearAnimation()
+                    getDrawable(R.drawable.bg_mic_recording)
+                }
+                else -> {
+                    binding.recordingPulseOuter.visibility = View.GONE
+                    binding.recordingPulseInner.visibility = View.GONE
+                    binding.recordingPulseOuter.clearAnimation()
+                    getDrawable(R.drawable.bg_mic_button)
+                }
             }
-            State.SPEAKING -> {
-                binding.recordingPulseOuter.visibility = View.GONE
-                binding.recordingPulseInner.visibility = View.GONE
-                binding.recordingPulseOuter.clearAnimation()
-                getDrawable(R.drawable.bg_mic_recording)
-            }
-            else -> {
-                binding.recordingPulseOuter.visibility = View.GONE
-                binding.recordingPulseInner.visibility = View.GONE
-                binding.recordingPulseOuter.clearAnimation()
-                getDrawable(R.drawable.bg_mic_button)
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "更新麦克风按钮背景失败", e)
         }
     }
 
     private fun showAiBubble(thinking: Boolean, text: String) {
         cancelHideBubble()
         binding.aiResponseBubble.visibility = View.VISIBLE
-        binding.aiResponseBubble.startAnimation(
-            AnimationUtils.loadAnimation(this, R.anim.fade_in_up)
-        )
+        try {
+            binding.aiResponseBubble.startAnimation(
+                AnimationUtils.loadAnimation(this, R.anim.fade_in_up)
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "加载气泡动画失败", e)
+        }
 
         binding.thinkingIndicator.visibility = if (thinking) View.VISIBLE else View.GONE
         binding.tvAiResponse.text = text
@@ -798,9 +847,13 @@ class CallActivity : BaseActivity() {
 
     private fun hideAiBubble() {
         if (binding.aiResponseBubble.visibility == View.VISIBLE) {
-            binding.aiResponseBubble.startAnimation(
-                AnimationUtils.loadAnimation(this, R.anim.fade_out_down)
-            )
+            try {
+                binding.aiResponseBubble.startAnimation(
+                    AnimationUtils.loadAnimation(this, R.anim.fade_out_down)
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "加载隐藏动画失败", e)
+            }
         }
         mainHandler.postDelayed(hideBubbleRunnable, 500)
     }
@@ -852,7 +905,7 @@ class CallActivity : BaseActivity() {
         cancelAutoListen()
         cancelHideBubble()
         try {
-            asrService.destroy()
+            if (::asrService.isInitialized) asrService.destroy()
         } catch (e: Exception) {
             Log.e(TAG, "销毁ASR异常", e)
         }
@@ -862,7 +915,7 @@ class CallActivity : BaseActivity() {
             Log.e(TAG, "停止Edge TTS异常", e)
         }
         try {
-            androidTtsService.destroy()
+            if (::androidTtsService.isInitialized) androidTtsService.destroy()
         } catch (e: Exception) {
             Log.e(TAG, "销毁Android TTS异常", e)
         }
