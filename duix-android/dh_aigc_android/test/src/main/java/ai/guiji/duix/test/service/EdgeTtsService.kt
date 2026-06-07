@@ -8,11 +8,11 @@ import org.json.JSONObject
 import java.io.*
 import java.util.*
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Edge TTS 服务 - 使用微软 Edge 浏览器的免费 TTS 服务
  * 无需 API Key，音质优秀，支持中文
- * 参考 Linly-Talker 的 Edge TTS 实现
  */
 class EdgeTtsService {
 
@@ -25,15 +25,10 @@ class EdgeTtsService {
         private const val RETRY_DELAY_MS = 1000L
         private const val SYNTHESIS_TIMEOUT_MS = 30000L
 
-        // 中文女声 - 晓晓（推荐，音质最好）
         const val VOICE_XIAOXIAO = "zh-CN-XiaoxiaoNeural"
-        // 中文女声 - 晓伊
         const val VOICE_XIAOYI = "zh-CN-XiaoyiNeural"
-        // 中文男声 - 云扬
         const val VOICE_YUNYANG = "zh-CN-YunyangNeural"
-        // 中文男声 - 云希
         const val VOICE_YUNXI = "zh-CN-YunxiNeural"
-        // 英文女声
         const val VOICE_JENNY = "en-US-JennyNeural"
     }
 
@@ -45,9 +40,9 @@ class EdgeTtsService {
         .build()
 
     private var webSocket: WebSocket? = null
-    private var isSynthesizing = false
+    private val isSynthesizing = AtomicBoolean(false)
 
-    // 收集音频数据
+    // 收集音频数据 - 使用synchronized保护
     private val audioChunks = mutableListOf<ByteArray>()
     private var audioFormat: String? = null
 
@@ -69,13 +64,14 @@ class EdgeTtsService {
     }
 
     private fun synthesizeWithRetry(text: String, voice: String, callback: Callback, retryCount: Int) {
-        if (isSynthesizing) {
+        if (!isSynthesizing.compareAndSet(false, true)) {
             callback.onError("正在合成中，请稍候")
             return
         }
 
-        isSynthesizing = true
-        audioChunks.clear()
+        synchronized(audioChunks) {
+            audioChunks.clear()
+        }
         audioFormat = null
 
         val requestId = REQUEST_ID_PREFIX + UUID.randomUUID().toString().replace("-", "").uppercase(Locale.getDefault()).take(28)
@@ -88,10 +84,14 @@ class EdgeTtsService {
 
         // 设置超时
         timeoutRunnable = Runnable {
-            if (isSynthesizing) {
+            if (isSynthesizing.get()) {
                 Log.w(TAG, "Synthesis timeout, retryCount=$retryCount")
-                webSocket?.close(1000, "Timeout")
-                isSynthesizing = false
+                try {
+                    webSocket?.close(1000, "Timeout")
+                } catch (e: Exception) {
+                    Log.e(TAG, "关闭WebSocket异常", e)
+                }
+                isSynthesizing.set(false)
                 if (retryCount < MAX_RETRIES) {
                     Log.i(TAG, "Retrying synthesis (attempt ${retryCount + 1}/$MAX_RETRIES)")
                     android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
@@ -126,15 +126,18 @@ class EdgeTtsService {
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                // 解析WebSocket文本消息（元数据）
                 if (text.contains("Path:turn.start")) {
                     Log.i(TAG, "Synthesis started")
                 } else if (text.contains("Path:turn.end")) {
-                    Log.i(TAG, "Synthesis completed, total chunks: ${audioChunks.size}")
-                    isSynthesizing = false
+                    val chunkCount: Int
+                    val fullAudio: ByteArray
+                    synchronized(audioChunks) {
+                        chunkCount = audioChunks.size
+                        fullAudio = combineAudioChunks()
+                    }
+                    Log.i(TAG, "Synthesis completed, total chunks: $chunkCount")
+                    isSynthesizing.set(false)
                     cancelTimeout()
-                    // 合并所有音频数据
-                    val fullAudio = combineAudioChunks()
                     if (fullAudio.isNotEmpty()) {
                         callback.onAudioData(fullAudio)
                     }
@@ -146,18 +149,15 @@ class EdgeTtsService {
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                // 解析二进制消息（音频数据）
                 val data = bytes.toByteArray()
-                // Edge TTS 二进制消息格式：
-                // 前2字节是header长度（大端序）
-                // 然后是header文本
-                // 最后是音频数据
                 if (data.size > 2) {
                     val headerLength = ((data[0].toInt() and 0xFF) shl 8) or (data[1].toInt() and 0xFF)
                     if (data.size > 2 + headerLength) {
                         val audioData = data.copyOfRange(2 + headerLength, data.size)
                         if (audioData.isNotEmpty()) {
-                            audioChunks.add(audioData)
+                            synchronized(audioChunks) {
+                                audioChunks.add(audioData)
+                            }
                         }
                     }
                 }
@@ -165,7 +165,7 @@ class EdgeTtsService {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "Edge TTS WebSocket failure (attempt ${retryCount + 1}/$MAX_RETRIES)", t)
-                isSynthesizing = false
+                isSynthesizing.set(false)
                 cancelTimeout()
 
                 if (retryCount < MAX_RETRIES) {
@@ -186,7 +186,7 @@ class EdgeTtsService {
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.i(TAG, "Edge TTS WebSocket closed")
-                isSynthesizing = false
+                isSynthesizing.set(false)
                 cancelTimeout()
             }
         })
@@ -198,8 +198,8 @@ class EdgeTtsService {
     }
 
     private fun combineAudioChunks(): ByteArray {
+        // 调用方需在synchronized(audioChunks)块内调用
         if (audioChunks.isEmpty()) return ByteArray(0)
-        // 跳过第一个chunk（通常是空的或只有头部信息）
         val startIdx = if (audioChunks.size > 1 && audioChunks[0].size < 100) 1 else 0
         var totalSize = 0
         for (i in startIdx until audioChunks.size) {
@@ -224,11 +224,15 @@ class EdgeTtsService {
     }
 
     fun stop() {
-        isSynthesizing = false
+        isSynthesizing.set(false)
         cancelTimeout()
-        webSocket?.close(1000, "Client stopping")
+        try {
+            webSocket?.close(1000, "Client stopping")
+        } catch (e: Exception) {
+            Log.e(TAG, "关闭WebSocket异常", e)
+        }
         webSocket = null
     }
 
-    fun isSynthesizing(): Boolean = isSynthesizing
+    fun isSynthesizing(): Boolean = isSynthesizing.get()
 }

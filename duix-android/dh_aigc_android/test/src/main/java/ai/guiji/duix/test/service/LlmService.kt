@@ -8,6 +8,7 @@ import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * LLM服务 - 使用Agnes AI的agnes-2.0-flash模型
@@ -31,6 +32,7 @@ class LlmService {
         .build()
 
     private val messages = JSONArray()
+    private val isRequesting = AtomicBoolean(false)
 
     interface Callback {
         fun onToken(token: String)
@@ -39,7 +41,6 @@ class LlmService {
     }
 
     init {
-        // 添加系统提示词
         val systemMsg = JSONObject()
         systemMsg.put("role", "system")
         systemMsg.put("content", SYSTEM_PROMPT)
@@ -47,6 +48,10 @@ class LlmService {
     }
 
     fun chat(userMessage: String, callback: Callback) {
+        if (!isRequesting.compareAndSet(false, true)) {
+            callback.onError("正在请求中，请稍候")
+            return
+        }
         chatWithRetry(userMessage, callback, 0)
     }
 
@@ -55,7 +60,9 @@ class LlmService {
         val userMsg = JSONObject()
         userMsg.put("role", "user")
         userMsg.put("content", userMessage)
-        messages.put(userMsg)
+        synchronized(messages) {
+            messages.put(userMsg)
+        }
 
         val requestBody = JSONObject()
         requestBody.put("model", MODEL)
@@ -78,19 +85,16 @@ class LlmService {
 
         client.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: Call, e: java.io.IOException) {
-                // 如果是重试，需要移除刚才添加的用户消息（避免重复）
-                // 但重试时我们重新添加，所以先移除
-                removeLastMessage()
+                synchronized(messages) {
+                    removeLastMessage()
+                }
 
                 if (retryCount < MAX_RETRIES) {
-                    // 延迟重试
-                    Thread {
-                        try {
-                            Thread.sleep(RETRY_DELAY_MS)
-                        } catch (_: InterruptedException) {}
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                         chatWithRetry(userMessage, callback, retryCount + 1)
-                    }.start()
+                    }, RETRY_DELAY_MS)
                 } else {
+                    isRequesting.set(false)
                     val errorMsg = when {
                         e.message?.contains("timeout", ignoreCase = true) == true -> "请求超时，请检查网络"
                         e.message?.contains("connect", ignoreCase = true) == true -> "无法连接服务器"
@@ -103,7 +107,9 @@ class LlmService {
 
             override fun onResponse(call: Call, response: Response) {
                 if (!response.isSuccessful) {
-                    removeLastMessage()
+                    synchronized(messages) {
+                        removeLastMessage()
+                    }
                     val errorBody = try { response.body?.string() } catch (_: Exception) { "" }
                     val errorMsg = when (response.code) {
                         401 -> "API认证失败"
@@ -113,13 +119,11 @@ class LlmService {
                     }
 
                     if (retryCount < MAX_RETRIES && response.code in 500..599) {
-                        Thread {
-                            try {
-                                Thread.sleep(RETRY_DELAY_MS)
-                            } catch (_: InterruptedException) {}
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                             chatWithRetry(userMessage, callback, retryCount + 1)
-                        }.start()
+                        }, RETRY_DELAY_MS)
                     } else {
+                        isRequesting.set(false)
                         callback.onError(errorMsg)
                     }
                     return
@@ -135,17 +139,18 @@ class LlmService {
                         if (currentLine.startsWith("data: ")) {
                             val data = currentLine.substring(6).trim()
                             if (data == "[DONE]") {
-                                // 保存助手回复到历史
-                                val assistantMsg = JSONObject()
-                                assistantMsg.put("role", "assistant")
-                                assistantMsg.put("content", fullText.toString())
-                                messages.put(assistantMsg)
+                                synchronized(messages) {
+                                    val assistantMsg = JSONObject()
+                                    assistantMsg.put("role", "assistant")
+                                    assistantMsg.put("content", fullText.toString())
+                                    messages.put(assistantMsg)
+                                }
 
-                                // 处理不完整的流 - 如果没有收到完整内容但有部分内容
                                 if (fullText.isEmpty() && lastValidText.isNotEmpty()) {
                                     fullText.append(lastValidText)
                                 }
 
+                                isRequesting.set(false)
                                 callback.onComplete(fullText.toString())
                                 break
                             }
@@ -161,7 +166,7 @@ class LlmService {
                                         callback.onToken(content)
                                     }
                                 }
-                            } catch (e: Exception) {
+                            } catch (_: Exception) {
                                 // Skip malformed JSON chunks
                             }
                         }
@@ -169,36 +174,42 @@ class LlmService {
 
                     // 处理流意外结束的情况
                     if (fullText.isNotEmpty()) {
-                        // 流有内容但没收到 [DONE]，仍然保存
-                        val assistantMsg = JSONObject()
-                        assistantMsg.put("role", "assistant")
-                        assistantMsg.put("content", fullText.toString())
-                        messages.put(assistantMsg)
+                        synchronized(messages) {
+                            val assistantMsg = JSONObject()
+                            assistantMsg.put("role", "assistant")
+                            assistantMsg.put("content", fullText.toString())
+                            messages.put(assistantMsg)
+                        }
+                        isRequesting.set(false)
                         callback.onComplete(fullText.toString())
                     } else if (retryCount < MAX_RETRIES) {
-                        // 空响应，重试
-                        removeLastMessage()
-                        Thread {
-                            try {
-                                Thread.sleep(RETRY_DELAY_MS)
-                            } catch (_: InterruptedException) {}
+                        synchronized(messages) {
+                            removeLastMessage()
+                        }
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                             chatWithRetry(userMessage, callback, retryCount + 1)
-                        }.start()
+                        }, RETRY_DELAY_MS)
                     } else {
+                        isRequesting.set(false)
                         callback.onComplete("")
                     }
 
-                    reader.close()
+                    try { reader.close() } catch (_: Exception) {}
                 } catch (e: Exception) {
-                    // 流读取异常，但如果已有部分内容，仍然返回
                     if (fullText.isNotEmpty()) {
-                        val assistantMsg = JSONObject()
-                        assistantMsg.put("role", "assistant")
-                        assistantMsg.put("content", fullText.toString())
-                        messages.put(assistantMsg)
+                        synchronized(messages) {
+                            val assistantMsg = JSONObject()
+                            assistantMsg.put("role", "assistant")
+                            assistantMsg.put("content", fullText.toString())
+                            messages.put(assistantMsg)
+                        }
+                        isRequesting.set(false)
                         callback.onComplete(fullText.toString())
                     } else {
-                        removeLastMessage()
+                        synchronized(messages) {
+                            removeLastMessage()
+                        }
+                        isRequesting.set(false)
                         callback.onError(e.message ?: "解析响应失败")
                     }
                 }
@@ -207,16 +218,21 @@ class LlmService {
     }
 
     private fun removeLastMessage() {
+        // 调用方需在synchronized(messages)块内调用
         if (messages.length() > 0) {
             messages.remove(messages.length() - 1)
         }
     }
 
     fun clearHistory() {
-        for (i in messages.length() - 1 downTo 0) { messages.remove(i) }
-        val systemMsg = JSONObject()
-        systemMsg.put("role", "system")
-        systemMsg.put("content", SYSTEM_PROMPT)
-        messages.put(systemMsg)
+        synchronized(messages) {
+            for (i in messages.length() - 1 downTo 0) { messages.remove(i) }
+            val systemMsg = JSONObject()
+            systemMsg.put("role", "system")
+            systemMsg.put("content", SYSTEM_PROMPT)
+            messages.put(systemMsg)
+        }
     }
+
+    fun isRequesting(): Boolean = isRequesting.get()
 }

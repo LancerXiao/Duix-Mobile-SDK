@@ -13,6 +13,9 @@ import ai.guiji.duix.test.service.LlmService
 import ai.guiji.duix.test.service.Mp3ToPcmConverter
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.opengl.GLSurfaceView
 import android.os.Bundle
 import android.os.Handler
@@ -418,8 +421,9 @@ class CallActivity : BaseActivity() {
                 override fun onError(error: String) {
                     runOnUiThread {
                         currentState = State.IDLE
-                        updateStatus("识别出错")
+                        updateStatus("识别出错: $error")
                         updateUI()
+                        showToast("语音识别出错: $error")
                         if (error.contains("No speech") || error.contains("No match")) {
                             scheduleAutoListen()
                         }
@@ -447,6 +451,14 @@ class CallActivity : BaseActivity() {
 
     private fun sendToLlm(text: String) {
         if (currentState == State.THINKING) return
+
+        // 检查网络连接
+        if (!isNetworkAvailable()) {
+            showToast("网络不可用，请检查网络连接")
+            updateStatus("网络不可用")
+            return
+        }
+
         currentState = State.THINKING
         updateStatus("思考中")
         updateUI()
@@ -482,8 +494,8 @@ class CallActivity : BaseActivity() {
                 override fun onError(error: String) {
                     runOnUiThread {
                         currentState = State.IDLE
-                        updateStatus("请求出错")
-                        hideAiBubble()
+                        updateStatus("请求出错: $error")
+                        showAiBubble(thinking = false, text = "出错了: $error")
                         updateUI()
                         scheduleAutoListen()
                     }
@@ -877,6 +889,19 @@ class CallActivity : BaseActivity() {
         binding.etInput.isEnabled = enabled
         binding.btnMic.alpha = if (enabled) 1.0f else 0.5f
         binding.btnSend.alpha = if (enabled) 1.0f else 0.5f
+    }
+
+    @Suppress("DEPRECATION")
+    private fun isNetworkAvailable(): Boolean {
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
+            val network = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(network) ?: return false
+            return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } catch (e: Exception) {
+            // 如果检测失败，默认认为网络可用，避免阻止正常使用
+            return true
+        }
     }
 
     @Suppress("DEPRECATION")
