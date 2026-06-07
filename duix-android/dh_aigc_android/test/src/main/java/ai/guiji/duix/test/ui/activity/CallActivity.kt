@@ -7,6 +7,7 @@ import ai.guiji.duix.sdk.client.render.DUIXRenderer
 import ai.guiji.duix.test.R
 import ai.guiji.duix.test.databinding.ActivityCallBinding
 import ai.guiji.duix.test.service.AndroidAsrService
+import ai.guiji.duix.test.service.AndroidTtsService
 import ai.guiji.duix.test.service.EdgeTtsService
 import ai.guiji.duix.test.service.LlmService
 import ai.guiji.duix.test.service.Mp3ToPcmConverter
@@ -50,7 +51,13 @@ class CallActivity : BaseActivity() {
     private val llmService = LlmService()
     private lateinit var asrService: AndroidAsrService
     private val edgeTtsService = EdgeTtsService()
+    private val androidTtsService = AndroidTtsService(mContext)
     private lateinit var mp3ToPcmConverter: Mp3ToPcmConverter
+
+    // TTS引擎选择
+    private enum class TtsEngine { EDGE_TTS, ANDROID_TTS }
+    private var currentTtsEngine = TtsEngine.EDGE_TTS
+    private var edgeTtsFailCount = 0
 
     // 状态管理
     private var currentState = State.IDLE
@@ -85,6 +92,9 @@ class CallActivity : BaseActivity() {
 
         // 初始化MP3转PCM转换器
         mp3ToPcmConverter = Mp3ToPcmConverter(mContext)
+
+        // 初始化Android原生TTS（作为Edge TTS的备选）
+        androidTtsService.init()
 
         Glide.with(mContext).load("file:///android_asset/bg/bg1.png").into(binding.ivBg)
 
@@ -388,11 +398,11 @@ class CallActivity : BaseActivity() {
     }
 
     /**
-     * 使用 Edge TTS 合成语音 -> MP3 转 PCM -> 推送给 DUIX 数字人
+     * 合成语音并推送给 DUIX 数字人
+     * 优先使用 Edge TTS，失败时自动切换到 Android 原生 TTS
      */
     private fun synthesizeAndPlay(text: String) {
         currentState = State.SPEAKING
-        updateStatus("语音合成中...")
         updateUI()
 
         val currentDuix = duix ?: run {
@@ -401,69 +411,151 @@ class CallActivity : BaseActivity() {
             return
         }
 
-        // 使用 Edge TTS 合成 MP3 音频
+        if (currentTtsEngine == TtsEngine.EDGE_TTS) {
+            updateStatus("语音合成中(Edge TTS)...")
+            synthesizeWithEdgeTts(text, currentDuix)
+        } else {
+            updateStatus("语音合成中(Android TTS)...")
+            synthesizeWithAndroidTts(text, currentDuix)
+        }
+    }
+
+    /**
+     * 使用 Edge TTS 合成语音 -> MP3 转 PCM -> 推送给 DUIX 数字人
+     */
+    private fun synthesizeWithEdgeTts(text: String, currentDuix: DUIX) {
+        Log.i(TAG, "尝试 Edge TTS 合成: ${text.take(30)}...")
         edgeTtsService.synthesize(text, EdgeTtsService.VOICE_XIAOXIAO, object : EdgeTtsService.Callback {
             override fun onAudioData(mp3Data: ByteArray) {
                 Log.i(TAG, "Edge TTS 返回音频数据: ${mp3Data.size} bytes")
                 // Edge TTS 返回完整 MP3 数据，转换为 PCM 推送给数字人
-                // MP3转PCM是耗时操作，放在后台线程执行
                 Thread {
-                    // 开始推送会话
-                    Log.i(TAG, "调用 startPush()")
-                    currentDuix.startPush()
-                    var totalPcmBytes = 0L
-                    var pcmChunkCount = 0
-                    mp3ToPcmConverter.convert(mp3Data, object : Mp3ToPcmConverter.Callback {
-                        override fun onPcmData(pcmData: ByteArray) {
-                            // 推送 PCM 数据给 DUIX 数字人驱动口型
-                            pcmChunkCount++
-                            totalPcmBytes += pcmData.size
-                            currentDuix.pushPcm(pcmData)
-                        }
-
-                        override fun onComplete() {
-                            // PCM 全部推送完毕，stopPush会触发BNF处理
-                            // 音频播放由RenderThread自动管理：
-                            //   - BNF数据就绪时自动调用audioPlayer.startPlay() → CALLBACK_EVENT_AUDIO_PLAY_START
-                            //   - 播放完成时触发CALLBACK_EVENT_AUDIO_PLAY_END
-                            // 所以这里不要设置IDLE状态，让AUDIO_PLAY_END回调来处理
-                            Log.i(TAG, "PCM转换完成: $pcmChunkCount chunks, $totalPcmBytes bytes, 调用 stopPush()")
-                            currentDuix.stopPush()
-                            runOnUiThread {
-                                updateStatus("数字人播放中...")
+                    try {
+                        Log.i(TAG, "调用 startPush()")
+                        currentDuix.startPush()
+                        var totalPcmBytes = 0L
+                        var pcmChunkCount = 0
+                        mp3ToPcmConverter.convert(mp3Data, object : Mp3ToPcmConverter.Callback {
+                            override fun onPcmData(pcmData: ByteArray) {
+                                pcmChunkCount++
+                                totalPcmBytes += pcmData.size
+                                Log.i(TAG, "pushPcm #$pcmChunkCount: ${pcmData.size} bytes (total: $totalPcmBytes)")
+                                currentDuix.pushPcm(pcmData)
                             }
-                        }
 
-                        override fun onError(error: String) {
-                            Log.e(TAG, "MP3 to PCM conversion error: $error")
-                            currentDuix.stopPush()
-                            runOnUiThread {
-                                // TTS转换失败，但文本已显示，仍然回到IDLE
-                                if (currentState == State.SPEAKING) {
-                                    currentState = State.IDLE
+                            override fun onComplete() {
+                                Log.i(TAG, "PCM转换完成: $pcmChunkCount chunks, $totalPcmBytes bytes, 调用 stopPush()")
+                                currentDuix.stopPush()
+                                edgeTtsFailCount = 0 // 成功则重置失败计数
+                                runOnUiThread {
+                                    updateStatus("数字人播放中...")
                                 }
-                                updateStatus("语音转换失败，文本已显示")
-                                updateUI()
-                                scheduleAutoListen()
                             }
+
+                            override fun onError(error: String) {
+                                Log.e(TAG, "MP3 to PCM conversion error: $error")
+                                currentDuix.stopPush()
+                                runOnUiThread {
+                                    // MP3转换失败，尝试Android TTS
+                                    Log.i(TAG, "MP3转换失败，切换到Android TTS")
+                                    currentTtsEngine = TtsEngine.ANDROID_TTS
+                                    synthesizeWithAndroidTts(text, currentDuix)
+                                }
+                            }
+                        })
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Edge TTS PCM处理异常", e)
+                        runOnUiThread {
+                            currentTtsEngine = TtsEngine.ANDROID_TTS
+                            synthesizeWithAndroidTts(text, currentDuix)
                         }
-                    })
+                    }
                 }.start()
             }
 
             override fun onComplete() {
-                // Edge TTS 合成完成（音频数据已在 onAudioData 中处理）
                 Log.i(TAG, "Edge TTS 合成完成")
             }
 
             override fun onError(error: String) {
                 Log.e(TAG, "Edge TTS 合成失败: $error")
-                runOnUiThread {
-                    // TTS失败，但文本已经显示在气泡中
-                    if (currentState == State.SPEAKING) {
-                        currentState = State.IDLE
+                edgeTtsFailCount++
+                // 连续失败2次以上，自动切换到Android TTS
+                if (edgeTtsFailCount >= 2) {
+                    Log.i(TAG, "Edge TTS 连续失败 $edgeTtsFailCount 次，切换到Android TTS")
+                    currentTtsEngine = TtsEngine.ANDROID_TTS
+                    synthesizeWithAndroidTts(text, currentDuix)
+                } else {
+                    // 第一次失败，尝试Android TTS作为本次的备选
+                    Log.i(TAG, "Edge TTS 失败，尝试Android TTS")
+                    synthesizeWithAndroidTts(text, currentDuix)
+                }
+            }
+        })
+    }
+
+    /**
+     * 使用 Android 原生 TTS 合成语音 -> WAV 转 PCM -> 推送给 DUIX 数字人
+     */
+    private fun synthesizeWithAndroidTts(text: String, currentDuix: DUIX) {
+        if (!androidTtsService.isReady()) {
+            Log.e(TAG, "Android TTS 未初始化，无法合成语音")
+            runOnUiThread {
+                updateStatus("语音合成不可用，文本已显示")
+                currentState = State.IDLE
+                updateUI()
+                scheduleAutoListen()
+            }
+            return
+        }
+
+        Log.i(TAG, "使用 Android TTS 合成: ${text.take(30)}...")
+        androidTtsService.synthesize(text, object : AndroidTtsService.Callback {
+            override fun onPcmData(pcmData: ByteArray) {
+                Log.i(TAG, "Android TTS 返回PCM数据: ${pcmData.size} bytes")
+                // 直接推送PCM数据给DUIX（已经是16kHz单声道16bit格式）
+                Thread {
+                    try {
+                        Log.i(TAG, "调用 startPush()")
+                        currentDuix.startPush()
+
+                        // 将PCM数据分块推送（每块1280字节 = 10ms）
+                        var offset = 0
+                        var chunkCount = 0
+                        while (offset < pcmData.size) {
+                            val chunkSize = minOf(1280, pcmData.size - offset)
+                            val chunk = pcmData.copyOfRange(offset, offset + chunkSize)
+                            currentDuix.pushPcm(chunk)
+                            chunkCount++
+                            offset += chunkSize
+                        }
+
+                        Log.i(TAG, "PCM推送完成: $chunkCount chunks, ${pcmData.size} bytes, 调用 stopPush()")
+                        currentDuix.stopPush()
+                        runOnUiThread {
+                            updateStatus("数字人播放中...")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Android TTS PCM推送异常", e)
+                        runOnUiThread {
+                            updateStatus("语音播放失败，文本已显示")
+                            currentState = State.IDLE
+                            updateUI()
+                            scheduleAutoListen()
+                        }
                     }
+                }.start()
+            }
+
+            override fun onComplete() {
+                Log.i(TAG, "Android TTS 合成完成")
+            }
+
+            override fun onError(error: String) {
+                Log.e(TAG, "Android TTS 合成失败: $error")
+                runOnUiThread {
                     updateStatus("语音合成失败，文本已显示")
+                    currentState = State.IDLE
                     updateUI()
                     scheduleAutoListen()
                 }
@@ -473,6 +565,7 @@ class CallActivity : BaseActivity() {
 
     private fun stopSpeaking() {
         edgeTtsService.stop()
+        androidTtsService.stop()
         duix?.stopAudio()
         currentState = State.IDLE
         updateStatus("就绪 - 按住麦克风说话")
@@ -606,6 +699,7 @@ class CallActivity : BaseActivity() {
         cancelHideBubble()
         asrService.destroy()
         edgeTtsService.stop()
+        androidTtsService.destroy()
         duix?.release()
     }
 }
