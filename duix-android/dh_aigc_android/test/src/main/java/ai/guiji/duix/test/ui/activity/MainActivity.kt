@@ -19,7 +19,7 @@ import java.io.File
 
 class MainActivity : BaseActivity() {
 
-    private lateinit var binding: ActivityMainBinding
+    private var binding: ActivityMainBinding? = null
     private var mLoadingDialog: LoadingDialog? = null
     private var mLastProgress = 0
 
@@ -54,41 +54,91 @@ class MainActivity : BaseActivity() {
     @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
 
-        binding.tvSdkVersion.text = "SDK v${BuildConfig.VERSION_NAME}"
+        // 核心修改：用try-catch包裹整个布局加载过程
+        // 如果布局加载失败，显示回退界面和错误信息
+        try {
+            binding = ActivityMainBinding.inflate(layoutInflater)
+            setContentView(binding!!.root)
+            Log.i(TAG, "主布局加载成功")
+        } catch (e: Exception) {
+            Log.e(TAG, "主布局加载失败!", e)
+            showFallbackUI("布局加载失败: ${e.message}")
+            showErrorDialog("界面加载失败", e.message ?: "未知错误，请尝试重新打开应用")
+            return
+        }
 
-        setupModelCards()
-        setupDownloadButtons()
-        setupSettings()
-        setupPlayButton()
-        refreshModelStatus()
-        checkForUpdate()
+        // 所有后续操作都用try-catch保护
+        try {
+            binding?.tvSdkVersion?.text = "SDK v${BuildConfig.VERSION_NAME}"
+        } catch (e: Exception) {
+            Log.e(TAG, "设置版本号失败", e)
+        }
+
+        try {
+            setupModelCards()
+        } catch (e: Exception) {
+            Log.e(TAG, "设置模型卡片失败", e)
+            showErrorDialog("初始化提示", "模型选择功能初始化失败: ${e.message}")
+        }
+
+        try {
+            setupDownloadButtons()
+        } catch (e: Exception) {
+            Log.e(TAG, "设置下载按钮失败", e)
+        }
+
+        try {
+            setupSettings()
+        } catch (e: Exception) {
+            Log.e(TAG, "设置设置按钮失败", e)
+        }
+
+        try {
+            setupPlayButton()
+        } catch (e: Exception) {
+            Log.e(TAG, "设置播放按钮失败", e)
+        }
+
+        try {
+            refreshModelStatus()
+        } catch (e: Exception) {
+            Log.e(TAG, "刷新模型状态失败", e)
+        }
+
+        try {
+            checkForUpdate()
+        } catch (e: Exception) {
+            Log.e(TAG, "检查更新失败", e)
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        refreshModelStatus()
+        try {
+            refreshModelStatus()
+        } catch (e: Exception) {
+            Log.e(TAG, "onResume刷新失败", e)
+        }
     }
 
     private fun setupModelCards() {
-        binding.cardModel1.setOnClickListener {
+        binding?.cardModel1?.setOnClickListener {
             selectModel(0)
         }
-        binding.cardModel2.setOnClickListener {
+        binding?.cardModel2?.setOnClickListener {
             selectModel(1)
         }
     }
 
     private fun setupDownloadButtons() {
-        binding.btnModel1Download.setOnClickListener {
+        binding?.btnModel1Download?.setOnClickListener {
             mSelectedModelIndex = 0
             mModelUrl = MODELS[0].url
             selectModel(0)
             downloadModelDirectly(0)
         }
-        binding.btnModel2Download.setOnClickListener {
+        binding?.btnModel2Download?.setOnClickListener {
             mSelectedModelIndex = 1
             mModelUrl = MODELS[1].url
             selectModel(1)
@@ -100,38 +150,46 @@ class MainActivity : BaseActivity() {
         mSelectedModelIndex = index
         mModelUrl = MODELS[index].url
 
-        // Update card backgrounds
-        binding.cardModel1.background = if (index == 0)
-            resources.getDrawable(R.drawable.bg_card_selected_16, null)
-        else
-            resources.getDrawable(R.drawable.bg_card_border_16, null)
+        try {
+            // Update card backgrounds
+            binding?.cardModel1?.background = if (index == 0)
+                resources.getDrawable(R.drawable.bg_card_selected_16, null)
+            else
+                resources.getDrawable(R.drawable.bg_card_border_16, null)
 
-        binding.cardModel2.background = if (index == 1)
-            resources.getDrawable(R.drawable.bg_card_selected_16, null)
-        else
-            resources.getDrawable(R.drawable.bg_card_border_16, null)
+            binding?.cardModel2?.background = if (index == 1)
+                resources.getDrawable(R.drawable.bg_card_selected_16, null)
+            else
+                resources.getDrawable(R.drawable.bg_card_border_16, null)
 
-        // Update checkmarks
-        binding.ivModel1Check.visibility = if (index == 0) View.VISIBLE else View.GONE
-        binding.ivModel2Check.visibility = if (index == 1) View.VISIBLE else View.GONE
+            // Update checkmarks
+            binding?.ivModel1Check?.visibility = if (index == 0) View.VISIBLE else View.GONE
+            binding?.ivModel2Check?.visibility = if (index == 1) View.VISIBLE else View.GONE
 
-        // Update hint text
-        binding.tvSelectHint.visibility = View.GONE
+            // Update hint text
+            binding?.tvSelectHint?.visibility = View.GONE
+        } catch (e: Exception) {
+            Log.e(TAG, "选择模型UI更新失败", e)
+        }
     }
 
     private fun setupSettings() {
-        binding.ivSettings.setOnClickListener {
-            val debugLayout = binding.layoutDebug
-            if (debugLayout.visibility == View.VISIBLE) {
-                debugLayout.visibility = View.GONE
-            } else {
-                debugLayout.visibility = View.VISIBLE
+        binding?.ivSettings?.setOnClickListener {
+            try {
+                val debugLayout = binding?.layoutDebug
+                if (debugLayout?.visibility == View.VISIBLE) {
+                    debugLayout.visibility = View.GONE
+                } else {
+                    debugLayout?.visibility = View.VISIBLE
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "切换调试模式失败", e)
             }
         }
     }
 
     private fun setupPlayButton() {
-        binding.btnPlay.setOnClickListener {
+        binding?.btnPlay?.setOnClickListener {
             play()
         }
     }
@@ -156,7 +214,6 @@ class MainActivity : BaseActivity() {
 
             Log.i(TAG, "模型[${model.name}] 检测: 目录=${modelDir.exists()}, 标记=${modelTag.exists()}")
 
-            // 如果模型目录存在但标记文件不存在，自动创建标记文件
             if (modelDir.exists() && !modelTag.exists()) {
                 Log.i(TAG, "模型[${model.name}] 目录存在但标记缺失，自动创建")
                 try { modelTag.mkdirs() } catch (e: Exception) { Log.e(TAG, "创建失败: ${e.message}") }
@@ -171,35 +228,39 @@ class MainActivity : BaseActivity() {
     private fun updateModelStatus(index: Int, isDownloaded: Boolean) {
         val statusText = if (isDownloaded) getString(R.string.model_downloaded) else getString(R.string.model_not_downloaded)
 
-        when (index) {
-            0 -> {
-                binding.tvModel1Status.text = statusText
-                if (isDownloaded) {
-                    binding.btnModel1Download.text = "已就绪"
-                    binding.btnModel1Download.setBackgroundResource(R.drawable.bg_btn_download_ready)
-                    binding.btnModel1Download.setTextColor(resources.getColor(R.color.text_secondary, null))
-                    binding.btnModel1Download.isClickable = false
-                } else {
-                    binding.btnModel1Download.text = "下载"
-                    binding.btnModel1Download.setBackgroundResource(R.drawable.bg_btn_download)
-                    binding.btnModel1Download.setTextColor(resources.getColor(R.color.text_on_primary, null))
-                    binding.btnModel1Download.isClickable = true
+        try {
+            when (index) {
+                0 -> {
+                    binding?.tvModel1Status?.text = statusText
+                    if (isDownloaded) {
+                        binding?.btnModel1Download?.text = "已就绪"
+                        binding?.btnModel1Download?.setBackgroundResource(R.drawable.bg_btn_download_ready)
+                        binding?.btnModel1Download?.setTextColor(resources.getColor(R.color.text_secondary, null))
+                        binding?.btnModel1Download?.isClickable = false
+                    } else {
+                        binding?.btnModel1Download?.text = "下载"
+                        binding?.btnModel1Download?.setBackgroundResource(R.drawable.bg_btn_download)
+                        binding?.btnModel1Download?.setTextColor(resources.getColor(R.color.text_on_primary, null))
+                        binding?.btnModel1Download?.isClickable = true
+                    }
+                }
+                1 -> {
+                    binding?.tvModel2Status?.text = statusText
+                    if (isDownloaded) {
+                        binding?.btnModel2Download?.text = "已就绪"
+                        binding?.btnModel2Download?.setBackgroundResource(R.drawable.bg_btn_download_ready)
+                        binding?.btnModel2Download?.setTextColor(resources.getColor(R.color.text_secondary, null))
+                        binding?.btnModel2Download?.isClickable = false
+                    } else {
+                        binding?.btnModel2Download?.text = "下载"
+                        binding?.btnModel2Download?.setBackgroundResource(R.drawable.bg_btn_download)
+                        binding?.btnModel2Download?.setTextColor(resources.getColor(R.color.text_on_primary, null))
+                        binding?.btnModel2Download?.isClickable = true
+                    }
                 }
             }
-            1 -> {
-                binding.tvModel2Status.text = statusText
-                if (isDownloaded) {
-                    binding.btnModel2Download.text = "已就绪"
-                    binding.btnModel2Download.setBackgroundResource(R.drawable.bg_btn_download_ready)
-                    binding.btnModel2Download.setTextColor(resources.getColor(R.color.text_secondary, null))
-                    binding.btnModel2Download.isClickable = false
-                } else {
-                    binding.btnModel2Download.text = "下载"
-                    binding.btnModel2Download.setBackgroundResource(R.drawable.bg_btn_download)
-                    binding.btnModel2Download.setTextColor(resources.getColor(R.color.text_on_primary, null))
-                    binding.btnModel2Download.isClickable = true
-                }
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "更新模型状态UI失败", e)
         }
     }
 
@@ -212,10 +273,13 @@ class MainActivity : BaseActivity() {
         val selectedModel = MODELS[mSelectedModelIndex]
         Log.i(TAG, "点击播放: 模型=${selectedModel.name}, URL=${selectedModel.url}")
 
-        // 先刷新模型状态（自动修复标记文件）
-        refreshModelStatus()
+        try {
+            refreshModelStatus()
+        } catch (e: Exception) {
+            Log.e(TAG, "刷新模型状态失败", e)
+        }
 
-        mDebugMode = binding.switchDebug.isChecked
+        mDebugMode = binding?.switchDebug?.isChecked ?: false
         checkBaseConfig()
     }
 
@@ -248,17 +312,26 @@ class MainActivity : BaseActivity() {
     }
 
     private fun jumpPlayPage() {
-        val intent = Intent(mContext, CallActivity::class.java)
-        intent.putExtra("modelUrl", mModelUrl)
-        intent.putExtra("debug", mDebugMode)
-        startActivity(intent)
+        try {
+            val intent = Intent(mContext, CallActivity::class.java)
+            intent.putExtra("modelUrl", mModelUrl)
+            intent.putExtra("debug", mDebugMode)
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "跳转播放页面失败", e)
+            showErrorDialog("跳转失败", "无法打开数字人页面: ${e.message}")
+        }
     }
 
     private fun showLoadingDialog(stage: String) {
-        mLoadingDialog?.dismiss()
-        mLoadingDialog = LoadingDialog(mContext, stage)
-        mLoadingDialog?.show()
-        mLastProgress = 0
+        try {
+            mLoadingDialog?.dismiss()
+            mLoadingDialog = LoadingDialog(mContext, stage)
+            mLoadingDialog?.show()
+            mLastProgress = 0
+        } catch (e: Exception) {
+            Log.e(TAG, "显示加载对话框失败", e)
+        }
     }
 
     private fun formatFileSize(bytes: Long): String {
@@ -270,122 +343,134 @@ class MainActivity : BaseActivity() {
     }
 
     private fun baseConfigDownload() {
-        mLoadingDialog?.setStage(getString(R.string.downloading_base_config))
-        mLoadingDialog?.setContent("")
-        mLoadingDialog?.setProgress(0)
+        try {
+            mLoadingDialog?.setStage(getString(R.string.downloading_base_config))
+            mLoadingDialog?.setContent("")
+            mLoadingDialog?.setProgress(0)
 
-        VirtualModelUtil.baseConfigDownload(mContext, BASE_CONFIG_URL, object :
-            VirtualModelUtil.ModelDownloadCallback {
-            override fun onDownloadProgress(url: String?, current: Long, total: Long) {
-                val progress = (current * 100 / total).toInt()
-                if (progress != mLastProgress) {
-                    mLastProgress = progress
-                    runOnUiThread {
-                        if (mLoadingDialog?.isShowing == true) {
-                            mLoadingDialog?.setProgress(progress)
-                            mLoadingDialog?.setContent("${progress}%")
-                            mLoadingDialog?.setProgressDetail(
-                                getString(R.string.download_progress_format, formatFileSize(current), formatFileSize(total))
-                            )
+            VirtualModelUtil.baseConfigDownload(mContext, BASE_CONFIG_URL, object :
+                VirtualModelUtil.ModelDownloadCallback {
+                override fun onDownloadProgress(url: String?, current: Long, total: Long) {
+                    val progress = (current * 100 / total).toInt()
+                    if (progress != mLastProgress) {
+                        mLastProgress = progress
+                        runOnUiThread {
+                            if (mLoadingDialog?.isShowing == true) {
+                                mLoadingDialog?.setProgress(progress)
+                                mLoadingDialog?.setContent("${progress}%")
+                                mLoadingDialog?.setProgressDetail(
+                                    getString(R.string.download_progress_format, formatFileSize(current), formatFileSize(total))
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            override fun onUnzipProgress(url: String?, current: Long, total: Long) {
-                val progress = (current * 100 / total).toInt()
-                if (progress != mLastProgress) {
-                    mLastProgress = progress
-                    runOnUiThread {
-                        if (mLoadingDialog?.isShowing == true) {
-                            mLoadingDialog?.setStage(getString(R.string.unzipping))
-                            mLoadingDialog?.setProgress(progress)
-                            mLoadingDialog?.setContent("${progress}%")
-                            mLoadingDialog?.setProgressDetail(
-                                getString(R.string.unzip_progress_format, progress)
-                            )
+                override fun onUnzipProgress(url: String?, current: Long, total: Long) {
+                    val progress = (current * 100 / total).toInt()
+                    if (progress != mLastProgress) {
+                        mLastProgress = progress
+                        runOnUiThread {
+                            if (mLoadingDialog?.isShowing == true) {
+                                mLoadingDialog?.setStage(getString(R.string.unzipping))
+                                mLoadingDialog?.setProgress(progress)
+                                mLoadingDialog?.setContent("${progress}%")
+                                mLoadingDialog?.setProgressDetail(
+                                    getString(R.string.unzip_progress_format, progress)
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            override fun onDownloadComplete(url: String?, dir: File?) {
-                runOnUiThread {
-                    mLoadingDialog?.dismiss()
-                    checkModel()
-                }
-            }
-
-            override fun onDownloadFail(url: String?, code: Int, msg: String?) {
-                runOnUiThread {
-                    val errorMsg = "基础配置下载失败(错误码:$code): ${msg ?: "未知错误"}"
-                    Log.e(TAG, errorMsg)
-                    mLoadingDialog?.showError(errorMsg) {
-                        baseConfigDownload()
+                override fun onDownloadComplete(url: String?, dir: File?) {
+                    runOnUiThread {
+                        mLoadingDialog?.dismiss()
+                        checkModel()
                     }
                 }
-            }
-        })
+
+                override fun onDownloadFail(url: String?, code: Int, msg: String?) {
+                    runOnUiThread {
+                        val errorMsg = "基础配置下载失败(错误码:$code): ${msg ?: "未知错误"}"
+                        Log.e(TAG, errorMsg)
+                        showErrorDialog("下载失败", errorMsg)
+                        mLoadingDialog?.showError(errorMsg) {
+                            baseConfigDownload()
+                        }
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "基础配置下载启动失败", e)
+            showErrorDialog("下载失败", "启动下载失败: ${e.message}")
+        }
     }
 
     private fun modelDownload() {
-        mLoadingDialog?.setStage(getString(R.string.downloading_model))
-        mLoadingDialog?.setContent("")
-        mLoadingDialog?.setProgress(0)
-        mLastProgress = 0
+        try {
+            mLoadingDialog?.setStage(getString(R.string.downloading_model))
+            mLoadingDialog?.setContent("")
+            mLoadingDialog?.setProgress(0)
+            mLastProgress = 0
 
-        VirtualModelUtil.modelDownload(mContext, mModelUrl, object : VirtualModelUtil.ModelDownloadCallback {
-            override fun onDownloadProgress(url: String?, current: Long, total: Long) {
-                val progress = (current * 100 / total).toInt()
-                if (progress != mLastProgress) {
-                    mLastProgress = progress
-                    runOnUiThread {
-                        if (mLoadingDialog?.isShowing == true) {
-                            mLoadingDialog?.setProgress(progress)
-                            mLoadingDialog?.setContent("${progress}%")
-                            mLoadingDialog?.setProgressDetail(
-                                getString(R.string.download_progress_format, formatFileSize(current), formatFileSize(total))
-                            )
+            VirtualModelUtil.modelDownload(mContext, mModelUrl, object : VirtualModelUtil.ModelDownloadCallback {
+                override fun onDownloadProgress(url: String?, current: Long, total: Long) {
+                    val progress = (current * 100 / total).toInt()
+                    if (progress != mLastProgress) {
+                        mLastProgress = progress
+                        runOnUiThread {
+                            if (mLoadingDialog?.isShowing == true) {
+                                mLoadingDialog?.setProgress(progress)
+                                mLoadingDialog?.setContent("${progress}%")
+                                mLoadingDialog?.setProgressDetail(
+                                    getString(R.string.download_progress_format, formatFileSize(current), formatFileSize(total))
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            override fun onUnzipProgress(url: String?, current: Long, total: Long) {
-                val progress = (current * 100 / total).toInt()
-                if (progress != mLastProgress) {
-                    mLastProgress = progress
-                    runOnUiThread {
-                        if (mLoadingDialog?.isShowing == true) {
-                            mLoadingDialog?.setStage(getString(R.string.unzipping))
-                            mLoadingDialog?.setProgress(progress)
-                            mLoadingDialog?.setContent("${progress}%")
-                            mLoadingDialog?.setProgressDetail(
-                                getString(R.string.unzip_progress_format, progress)
-                            )
+                override fun onUnzipProgress(url: String?, current: Long, total: Long) {
+                    val progress = (current * 100 / total).toInt()
+                    if (progress != mLastProgress) {
+                        mLastProgress = progress
+                        runOnUiThread {
+                            if (mLoadingDialog?.isShowing == true) {
+                                mLoadingDialog?.setStage(getString(R.string.unzipping))
+                                mLoadingDialog?.setProgress(progress)
+                                mLoadingDialog?.setContent("${progress}%")
+                                mLoadingDialog?.setProgressDetail(
+                                    getString(R.string.unzip_progress_format, progress)
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            override fun onDownloadComplete(url: String?, dir: File?) {
-                runOnUiThread {
-                    mLoadingDialog?.dismiss()
-                    refreshModelStatus()
-                    jumpPlayPage()
-                }
-            }
-
-            override fun onDownloadFail(url: String?, code: Int, msg: String?) {
-                runOnUiThread {
-                    val errorMsg = "模型下载失败(错误码:$code): ${msg ?: "未知错误"}"
-                    Log.e(TAG, errorMsg)
-                    mLoadingDialog?.showError(errorMsg) {
-                        modelDownload()
+                override fun onDownloadComplete(url: String?, dir: File?) {
+                    runOnUiThread {
+                        mLoadingDialog?.dismiss()
+                        refreshModelStatus()
+                        jumpPlayPage()
                     }
                 }
-            }
-        })
+
+                override fun onDownloadFail(url: String?, code: Int, msg: String?) {
+                    runOnUiThread {
+                        val errorMsg = "模型下载失败(错误码:$code): ${msg ?: "未知错误"}"
+                        Log.e(TAG, errorMsg)
+                        showErrorDialog("下载失败", errorMsg)
+                        mLoadingDialog?.showError(errorMsg) {
+                            modelDownload()
+                        }
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "模型下载启动失败", e)
+            showErrorDialog("下载失败", "启动下载失败: ${e.message}")
+        }
     }
 
     private fun downloadModelDirectly(index: Int) {
@@ -401,7 +486,6 @@ class MainActivity : BaseActivity() {
         showLoadingDialog("下载${model.name}模型...")
         Log.i(TAG, "直接下载模型: ${model.name}")
 
-        // 先检查基础配置
         if (VirtualModelUtil.checkBaseConfig(mContext)) {
             modelDownload()
         } else {
@@ -429,8 +513,8 @@ class MainActivity : BaseActivity() {
 
                 if (latestVersion.isNotEmpty() && latestVersion != BuildConfig.VERSION_NAME) {
                     runOnUiThread {
-                        binding.tvUpdateHint.text = updateMsg
-                        binding.tvUpdateHint.visibility = View.VISIBLE
+                        binding?.tvUpdateHint?.text = updateMsg
+                        binding?.tvUpdateHint?.visibility = View.VISIBLE
                     }
                 }
             } catch (e: Exception) {
