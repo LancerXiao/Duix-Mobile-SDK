@@ -606,6 +606,8 @@ class CallActivity : BaseActivity() {
             updateUI()
             return
         }
+        // [Phase 3.2] 开始录音前申请音频焦点
+        requestAudioFocus()
         // 重置用户主动停止标志和累积文本，进入正常录音
         userStoppedAsr = false
         lastPartialText = ""
@@ -714,6 +716,8 @@ class CallActivity : BaseActivity() {
         userStoppedAsr = true
         // 取消文字稳定检测定时器
         handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
+        // [Phase 3.2] 停止录音后释放音频焦点
+        abandonAudioFocus()
         try {
             asrService.stopListening()
         } catch (e: Exception) {
@@ -1171,6 +1175,78 @@ class CallActivity : BaseActivity() {
             Log.i(TAG, "[DIAG] showErrorBanner: '$message'")
         } catch (e: Exception) {
             Log.e(TAG, "showErrorBanner 异常", e)
+        }
+    }
+
+    // [Phase 3.2] Audio Focus 监听：录音中接电话/导航/其他应用抢焦点 → 自动 stopListening
+    private var audioFocusRequest: android.media.AudioFocusRequest? = null
+    private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager }
+    private val audioFocusListener = android.media.AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            android.media.AudioManager.AUDIOFOCUS_LOSS,
+            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                Log.w(TAG, "[DIAG] Audio Focus 丢失: focusChange=$focusChange, currentState=$currentState")
+                if (currentState == State.LISTENING) {
+                    Log.w(TAG, "[DIAG] Audio Focus 丢失导致录音冲突，自动停止录音")
+                    runOnUiThread {
+                        stopListening()
+                        showErrorBanner("音频焦点丢失，录音已停止", 3000)
+                    }
+                }
+            }
+            else -> {
+                Log.d(TAG, "[DIAG] Audio Focus 变化（无需处理）: focusChange=$focusChange")
+            }
+        }
+    }
+
+    private fun requestAudioFocus() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                audioFocusRequest = android.media.AudioFocusRequest.Builder(
+                    android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+                )
+                    .setAudioAttributes(
+                        android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                    .setOnAudioFocusChangeListener(audioFocusListener)
+                    .setWillPauseWhenDucked(false)
+                    .build()
+                val result = audioManager.requestAudioFocus(audioFocusRequest!!)
+                Log.i(TAG, "[DIAG] requestAudioFocus: result=$result")
+            } else {
+                @Suppress("DEPRECATION")
+                val result = audioManager.requestAudioFocus(
+                    audioFocusListener,
+                    android.media.AudioManager.STREAM_VOICE_CALL,
+                    android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+                )
+                Log.i(TAG, "[DIAG] requestAudioFocus (legacy): result=$result")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "requestAudioFocus 异常", e)
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                audioFocusRequest?.let {
+                    val result = audioManager.abandonAudioFocusRequest(it)
+                    Log.i(TAG, "[DIAG] abandonAudioFocusRequest: result=$result")
+                }
+                audioFocusRequest = null
+            } else {
+                @Suppress("DEPRECATION")
+                val result = audioManager.abandonAudioFocus(audioFocusListener)
+                Log.i(TAG, "[DIAG] abandonAudioFocus (legacy): result=$result")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "abandonAudioFocus 异常", e)
         }
     }
 
