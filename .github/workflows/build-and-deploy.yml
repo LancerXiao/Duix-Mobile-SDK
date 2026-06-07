@@ -117,6 +117,15 @@ jobs:
           scp -i ~/.ssh/deploy_key -P ${{ secrets.ECS_PORT }} deploy/download-page.html ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:$DEPLOY_DIR/index.html
           echo "Deployed to: https://www.enlyai.com/downloads/duix/"
 
+      - name: Commit version bump
+        working-directory: duix-android/dh_aigc_android
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add test/build.gradle
+          git diff --cached --quiet || git commit -m "chore: bump version to ${{ steps.bump_version.outputs.name }} (${{ steps.bump_version.outputs.code }})"
+          git push
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
