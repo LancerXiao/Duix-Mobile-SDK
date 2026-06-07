@@ -153,6 +153,12 @@ class CallActivity : BaseActivity() {
         binding = ActivityCallBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // [Phase 6.3] 键盘 insets 适配：让 bottomPanel 在键盘弹起时上移
+        // decorFitsSystemWindows=false 让 root view 接管 insets
+        // 然后通过 OnApplyWindowInsetsListener 把 IME insets 应用到 bottomPanel
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        applyImeInsetsToBottomPanel()
+
         modelName = intent.getStringExtra("modelName") ?: ""
         debug = intent.getBooleanExtra("debug", false)
         // 根据 modelName 构造完整的模型 URL（DUIX SDK 会从中提取 dirName）
@@ -1432,6 +1438,42 @@ class CallActivity : BaseActivity() {
             // 静默吞掉
         }
     }
+
+    /**
+     * [Phase 6.3] 键盘 IME insets 适配
+     * 监听 WindowInsets 变化，把 IME 高度应用到 bottomPanel 的 paddingBottom
+     * 同时把 statusBar 高度应用到 toolbar 的 paddingTop
+     * 避免键盘弹起时输入框被遮挡、状态栏文字被 toolbar 遮挡
+     */
+    private fun applyImeInsetsToBottomPanel() {
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            val imeInsets = insets.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.ime()
+            )
+            val systemBarsInsets = insets.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars()
+            )
+            // 底部：取 IME 高度 和 导航栏高度 的较大值
+            val bottomInset = maxOf(imeInsets.bottom, systemBarsInsets.bottom)
+            binding.bottomPanel.setPadding(
+                binding.bottomPanel.paddingLeft,
+                binding.bottomPanel.paddingTop,
+                binding.bottomPanel.paddingRight,
+                bottomInset + dpToPx(16)  // 16dp 是 bottomPanel 原本的 paddingBottom
+            )
+            // 顶部：状态栏高度（toolbar）
+            binding.toolbar.setPadding(
+                binding.toolbar.paddingLeft,
+                systemBarsInsets.top,
+                binding.toolbar.paddingRight,
+                binding.toolbar.paddingBottom
+            )
+            insets
+        }
+    }
+
+    private fun dpToPx(dp: Int): Int =
+        (dp * resources.displayMetrics.density).toInt()
 
     private fun scheduleAutoListen() {
         cancelAutoListen()
