@@ -44,7 +44,7 @@ class MainActivity : Activity() {
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val modelManager = ModelManager.getInstance()
+    private val modelManager = ModelManager()
 
     private var mSelectedModel: String? = null  // 当前选中的模型文件名
     private var mStatusText: TextView? = null
@@ -175,8 +175,8 @@ class MainActivity : Activity() {
             name = "小本 (bend3)",
             desc = "数字人模型 1"
         ) {
-            onModelCardClicked(ModelManager.MODEL_NAME_XIAOBEN, ModelManager.MODEL_XIAOBEN_URL)
-        }
+            onModelCardClicked(AiConfig.MODEL_NAME_XIAOBEN, AiConfig.MODEL_XIAOBEN_URL)
+        )
         mCardXiaoben = xiaobenCard.card
         mStatusXiaoben = xiaobenCard.statusView
         mBtnDownloadXiaoben = xiaobenCard.downloadBtn
@@ -187,7 +187,7 @@ class MainActivity : Activity() {
             name = "艾瑞克 (airuike)",
             desc = "数字人模型 2"
         ) {
-            onModelCardClicked(ModelManager.MODEL_NAME_AIRUIKE, ModelManager.MODEL_AIRUIKE_URL)
+            onModelCardClicked(AiConfig.MODEL_NAME_AIRUIKE, AiConfig.MODEL_AIRUIKE_URL)
         }
         mCardAiruike = airuikeCard.card
         mStatusAiruike = airuikeCard.statusView
@@ -397,8 +397,8 @@ class MainActivity : Activity() {
         Thread {
             try {
                 val baseReady = modelManager.isBaseConfigReady(this)
-                val xiaobenReady = modelManager.isModelReady(this, ModelManager.MODEL_NAME_XIAOBEN)
-                val airuikeReady = modelManager.isModelReady(this, ModelManager.MODEL_NAME_AIRUIKE)
+                val xiaobenReady = modelManager.isModelReady(this, AiConfig.MODEL_NAME_XIAOBEN)
+                val airuikeReady = modelManager.isModelReady(this, AiConfig.MODEL_NAME_AIRUIKE)
 
                 val statusText = StringBuilder()
                 statusText.append("基础资源: ${if (baseReady) "✓ 已就绪" else "✗ 未下载"}\n")
@@ -416,10 +416,10 @@ class MainActivity : Activity() {
                         // 自动选择第一个已下载的模型
                         if (mSelectedModel == null) {
                             if (xiaobenReady && baseReady) {
-                                mSelectedModel = ModelManager.MODEL_NAME_XIAOBEN
+                                mSelectedModel = AiConfig.MODEL_NAME_XIAOBEN
                                 highlightSelectedCard(mCardXiaoben, true)
                             } else if (airuikeReady && baseReady) {
-                                mSelectedModel = ModelManager.MODEL_NAME_AIRUIKE
+                                mSelectedModel = AiConfig.MODEL_NAME_AIRUIKE
                                 highlightSelectedCard(mCardAiruike, true)
                             }
                         }
@@ -465,11 +465,11 @@ class MainActivity : Activity() {
             // 先高亮显示选中的卡片
             mSelectedModel = modelName
             highlightSelectedCard(
-                if (modelName == ModelManager.MODEL_NAME_XIAOBEN) mCardXiaoben else mCardAiruike,
+                if (modelName == AiConfig.MODEL_NAME_XIAOBEN) mCardXiaoben else mCardAiruike,
                 true
             )
             highlightSelectedCard(
-                if (modelName == ModelManager.MODEL_NAME_XIAOBEN) mCardAiruike else mCardXiaoben,
+                if (modelName == AiConfig.MODEL_NAME_XIAOBEN) mCardAiruike else mCardXiaoben,
                 false
             )
 

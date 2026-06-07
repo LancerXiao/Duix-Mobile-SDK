@@ -9,23 +9,20 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
- * ASR服务 - 使用阿里云DashScope的fun-asr-realtime模型
+ * ASR服务 - 使用阿里云百炼平台的 fun-asr-realtime 模型
  * 通过WebSocket实现实时语音识别
  */
 class AsrService {
 
     companion object {
         private const val TAG = "AsrService"
-        private const val WS_URL = "wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference/"
-        // 注意：需要DashScope API Key，这里先用占位符
-        // 用户需要去 https://docs.qwencloud.com/api-reference/preparation/api-key 获取
-        private const val API_KEY = "sk-TuKWa0JQb9nGiUc7d6goWxpRzhUGfRpALI1DASAf1qOIXNCs"
     }
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS)
+        .pingInterval(5, TimeUnit.SECONDS)
         .build()
 
     private var webSocket: WebSocket? = null
@@ -46,8 +43,8 @@ class AsrService {
         taskId = UUID.randomUUID().toString().replace("-", "").take(32)
 
         val request = Request.Builder()
-            .url(WS_URL)
-            .addHeader("Authorization", "bearer $API_KEY")
+            .url(AiConfig.ASR_WS_URL)
+            .addHeader("Authorization", "bearer ${AiConfig.DASHSCOPE_API_KEY}")
             .build()
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
@@ -64,7 +61,7 @@ class AsrService {
                         put("task_group", "audio")
                         put("task", "asr")
                         put("function", "recognition")
-                        put("model", "fun-asr-realtime")
+                        put("model", AiConfig.ASR_MODEL)
                         put("parameters", JSONObject().apply {
                             put("format", "pcm")
                             put("sample_rate", 16000)

@@ -9,8 +9,10 @@ import ai.guiji.duix.test.databinding.ActivityCallBinding
 import ai.guiji.duix.test.service.AndroidAsrService
 import ai.guiji.duix.test.service.AndroidTtsService
 import ai.guiji.duix.test.service.EdgeTtsService
+import ai.guiji.duix.test.service.HybridAsrService
 import ai.guiji.duix.test.service.LlmService
 import ai.guiji.duix.test.service.Mp3ToPcmConverter
+import ai.guiji.duix.test.service.QwenTtsService
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -53,14 +55,15 @@ class CallActivity : BaseActivity() {
 
     // AI服务 - 使用 lateinit 避免在 mContext 赋值前初始化导致闪退
     private val llmService = LlmService()
-    private lateinit var asrService: AndroidAsrService
+    private lateinit var asrService: HybridAsrService
+    private val qwenTtsService = QwenTtsService()
     private val edgeTtsService = EdgeTtsService()
     private lateinit var androidTtsService: AndroidTtsService
     private lateinit var mp3ToPcmConverter: Mp3ToPcmConverter
 
     // TTS引擎选择
-    private enum class TtsEngine { EDGE_TTS, ANDROID_TTS }
-    private var currentTtsEngine = TtsEngine.EDGE_TTS
+    private enum class TtsEngine { QWEN_TTS, EDGE_TTS, ANDROID_TTS }
+    private var currentTtsEngine = TtsEngine.QWEN_TTS
     private var edgeTtsFailCount = 0
 
     // 状态管理
@@ -91,10 +94,10 @@ class CallActivity : BaseActivity() {
         debug = intent.getBooleanExtra("debug", false)
         // 根据 modelName 构造完整的模型 URL（DUIX SDK 会从中提取 dirName）
         modelUrl = when (modelName) {
-            ai.guiji.duix.test.service.ModelManager.MODEL_NAME_XIAOBEN ->
-                ai.guiji.duix.test.service.ModelManager.MODEL_XIAOBEN_URL
-            ai.guiji.duix.test.service.ModelManager.MODEL_NAME_AIRUIKE ->
-                ai.guiji.duix.test.service.ModelManager.MODEL_AIRUIKE_URL
+            ai.guiji.duix.test.service.AiConfig.MODEL_NAME_XIAOBEN ->
+                ai.guiji.duix.test.service.AiConfig.MODEL_XIAOBEN_URL
+            ai.guiji.duix.test.service.AiConfig.MODEL_NAME_AIRUIKE ->
+                ai.guiji.duix.test.service.AiConfig.MODEL_AIRUIKE_URL
             else -> {
                 // 兼容旧的 modelUrl 参数
                 val legacy = intent.getStringExtra("modelUrl") ?: ""
@@ -110,7 +113,7 @@ class CallActivity : BaseActivity() {
         }
 
         // 再次确认模型已下载
-        val modelManager = ai.guiji.duix.test.service.ModelManager.getInstance()
+        val modelManager = ai.guiji.duix.test.service.ModelManager()
         if (!modelManager.isBaseConfigReady(mContext)) {
             Log.e(TAG, "基础资源未下载")
             showLoadingError("基础资源未下载", "请返回主页下载基础资源")
@@ -124,7 +127,7 @@ class CallActivity : BaseActivity() {
 
         // 在 super.onCreate() 之后 mContext 已赋值，安全初始化依赖 Context 的服务
         try {
-            asrService = AndroidAsrService(mContext)
+            asrService = HybridAsrService(mContext)
             asrService.create()
         } catch (e: Exception) {
             Log.e(TAG, "初始化ASR服务失败", e)
@@ -428,7 +431,7 @@ class CallActivity : BaseActivity() {
         updateUI()
 
         try {
-            asrService.startListening(object : AndroidAsrService.Callback {
+            asrService.startListening(object : HybridAsrService.Callback {
                 override fun onReady() {
                     runOnUiThread { updateStatus("请说话") }
                 }
@@ -558,12 +561,85 @@ class CallActivity : BaseActivity() {
             return
         }
 
-        if (currentTtsEngine == TtsEngine.EDGE_TTS) {
-            updateStatus("合成语音中")
-            synthesizeWithEdgeTts(text, currentDuix)
-        } else {
-            updateStatus("合成语音中")
-            synthesizeWithAndroidTts(text, currentDuix)
+        when (currentTtsEngine) {
+            TtsEngine.QWEN_TTS -> {
+                updateStatus("合成语音中")
+                synthesizeWithQwenTts(text, currentDuix)
+            }
+            TtsEngine.EDGE_TTS -> {
+                updateStatus("合成语音中")
+                synthesizeWithEdgeTts(text, currentDuix)
+            }
+            TtsEngine.ANDROID_TTS -> {
+                updateStatus("合成语音中")
+                synthesizeWithAndroidTts(text, currentDuix)
+            }
+        }
+    }
+
+    /**
+     * 使用 Qwen TTS (qwen3-tts-flash-realtime) 合成语音
+     * 返回的是 PCM 24kHz mono 16bit 数据
+     */
+    private fun synthesizeWithQwenTts(text: String, currentDuix: DUIX) {
+        Log.i(TAG, "尝试 Qwen TTS 合成: ${text.take(30)}...")
+        val pushedOnce = booleanArrayOf(false)
+        try {
+            qwenTtsService.synthesize(text, AiConfig.TTS_DEFAULT_VOICE, object : QwenTtsService.Callback {
+                override fun onAudioData(pcmData: ByteArray) {
+                    Log.i(TAG, "Qwen TTS 返回PCM数据: ${pcmData.size} bytes")
+                    Thread {
+                        try {
+                            if (!pushedOnce[0]) {
+                                currentDuix.startPush()
+                                pushedOnce[0] = true
+                            }
+                            // 写入 PCM 数据（Qwen TTS 输出 PCM 24kHz mono 16bit）
+                            try {
+                                currentDuix.pushPcm(pcmData)
+                            } catch (e: Throwable) {
+                                Log.e(TAG, "pushPcm 异常", e)
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Qwen TTS push 音频异常", e)
+                            runOnUiThread {
+                                currentState = State.IDLE
+                                updateStatus("语音播放失败")
+                                updateUI()
+                                scheduleAutoListen()
+                            }
+                        }
+                    }.start()
+                }
+
+                override fun onComplete() {
+                    Log.i(TAG, "Qwen TTS 合成完成")
+                    Thread {
+                        try {
+                            currentDuix.stopPush()
+                        } catch (e: Throwable) {
+                            Log.e(TAG, "stopPush 异常", e)
+                        }
+                    }.start()
+                }
+
+                override fun onError(error: String) {
+                    Log.e(TAG, "Qwen TTS 错误: $error, fallback 到 Edge TTS")
+                    runOnUiThread {
+                        // fallback 到 Edge TTS
+                        currentTtsEngine = TtsEngine.EDGE_TTS
+                        showToast("Qwen TTS失败，使用Edge TTS: $error")
+                        synthesizeWithEdgeTts(text, currentDuix)
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "Qwen TTS 启动异常", e)
+            // fallback
+            runOnUiThread {
+                currentTtsEngine = TtsEngine.EDGE_TTS
+                synthesizeWithEdgeTts(text, currentDuix)
+            }
         }
     }
 
@@ -759,6 +835,11 @@ class CallActivity : BaseActivity() {
             edgeTtsService.stop()
         } catch (e: Exception) {
             Log.e(TAG, "停止Edge TTS异常", e)
+        }
+        try {
+            qwenTtsService.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止Qwen TTS异常", e)
         }
         try {
             if (::androidTtsService.isInitialized) androidTtsService.stop()

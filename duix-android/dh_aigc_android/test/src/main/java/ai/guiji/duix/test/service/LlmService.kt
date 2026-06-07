@@ -17,12 +17,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class LlmService {
 
     companion object {
-        private const val BASE_URL = "https://apihub.agnes-ai.com/v1"
-        private const val API_KEY = "sk-TuKWa0JQb9nGiUc7d6goWxpRzhUGfRpALI1DASAf1qOIXNCs"
-        private const val MODEL = "agnes-2.0-flash"
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 1000L
-        private const val SYSTEM_PROMPT = "你是一个友好的数字人助手，名叫小杜。请用简洁、自然的口语风格回答问题，每次回答不超过100字。不要使用markdown格式，用纯文本回答。"
     }
 
     private val client = OkHttpClient.Builder()
@@ -43,7 +39,7 @@ class LlmService {
     init {
         val systemMsg = JSONObject()
         systemMsg.put("role", "system")
-        systemMsg.put("content", SYSTEM_PROMPT)
+        systemMsg.put("content", AiConfig.LLM_SYSTEM_PROMPT)
         messages.put(systemMsg)
     }
 
@@ -65,7 +61,7 @@ class LlmService {
         }
 
         val requestBody = JSONObject()
-        requestBody.put("model", MODEL)
+        requestBody.put("model", AiConfig.LLM_MODEL)
         requestBody.put("messages", messages)
         requestBody.put("stream", true)
         requestBody.put("max_tokens", 512)
@@ -75,8 +71,8 @@ class LlmService {
             .toRequestBody("application/json".toMediaType())
 
         val request = Request.Builder()
-            .url("$BASE_URL/chat/completions")
-            .addHeader("Authorization", "Bearer $API_KEY")
+            .url("${AiConfig.LLM_BASE_URL}/chat/completions")
+            .addHeader("Authorization", "Bearer ${AiConfig.DASHSCOPE_API_KEY}")
             .addHeader("Content-Type", "application/json")
             .post(body)
             .build()
@@ -229,7 +225,7 @@ class LlmService {
             for (i in messages.length() - 1 downTo 0) { messages.remove(i) }
             val systemMsg = JSONObject()
             systemMsg.put("role", "system")
-            systemMsg.put("content", SYSTEM_PROMPT)
+            systemMsg.put("content", AiConfig.LLM_SYSTEM_PROMPT)
             messages.put(systemMsg)
         }
     }
