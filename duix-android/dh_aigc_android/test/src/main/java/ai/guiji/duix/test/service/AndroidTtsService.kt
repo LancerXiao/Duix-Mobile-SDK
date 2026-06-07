@@ -2,6 +2,7 @@ package ai.guiji.duix.test.service
 
 import android.content.Context
 import android.os.Build
+import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -109,10 +110,10 @@ class AndroidTtsService(private val context: Context) {
         val utteranceId = "tts_${System.currentTimeMillis()}"
         val result: Int
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            result = tts?.synthesizeToFile(text, null, outputFile, utteranceId) ?: -1
+            result = tts?.synthesizeToFile(text, null as Bundle?, outputFile, utteranceId) ?: -1
         } else {
             @Suppress("DEPRECATION")
-            result = tts?.synthesizeToFile(text, outputFile.absolutePath) ?: -1
+            result = tts?.synthesizeToFile(text, null as HashMap<String, String>?, outputFile.absolutePath) ?: -1
         }
 
         if (result == TextToSpeech.ERROR) {
