@@ -71,6 +71,8 @@ class CallActivity : BaseActivity() {
     private var currentState = State.IDLE
     private var isDuiXReady = false
     private var isMuted = false
+    // 用户主动停止 ASR 的标记位，防止停止后迟到的 ASR 回调改变状态
+    private var userStoppedAsr = false
 
     // 自动回到监听
     private val mainHandler = Handler(Looper.getMainLooper())
