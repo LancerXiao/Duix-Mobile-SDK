@@ -15,8 +15,8 @@ android {
         applicationId "ai.guiji.duix.test"
         minSdk 24
         targetSdk 34
-        versionCode 43
-        versionName '4.4.43'
+        versionCode 44
+        versionName '4.4.44'
     }
 
     signingConfigs {
