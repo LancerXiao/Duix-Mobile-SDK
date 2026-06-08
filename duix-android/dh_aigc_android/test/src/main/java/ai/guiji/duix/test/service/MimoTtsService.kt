@@ -79,7 +79,7 @@ class MimoTtsService {
 
         val request = Request.Builder()
             .url(AiConfig.MIMO_TTS_BASE_URL)
-            .addHeader("Authorization", "Bearer ${AiConfig.MIMO_API_KEY}")
+            .addHeader("api-key", AiConfig.MIMO_API_KEY)
             .addHeader("Content-Type", "application/json")
             .post(body)
             .build()

@@ -22,6 +22,7 @@ object AiConfig {
 
     // TTS - MiMo (小米 mimo-v2.5-tts)
     // OpenAI 兼容的 Chat Completions 格式，REST API 非流式
+    // 注意：Token Plan 端点支持 TTS，需使用 api-key 头（非 Authorization: Bearer）
     const val MIMO_API_KEY = "tp-cujq11e705x6k837werg4kyhnhen7fhy2ilo2yl7d91v01og"
     const val MIMO_TTS_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
     const val MIMO_TTS_MODEL = "mimo-v2.5-tts"

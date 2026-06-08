@@ -1028,6 +1028,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     runOnUiThread {
                         cancelThinkingTimeout()
                         showAiBubble(thinking = false, text = fullText)
+                        scrollMessagesToBottomFinal()  // LLM 完成后确保滚动到底部
                         if (fullText.isNotEmpty()) {
                             synthesizeAndPlay(fullText)
                         } else {
@@ -1046,6 +1047,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         setState(State.IDLE)
                         updateStatus("Error: $error")
                         showAiBubble(thinking = false, text = "出错了: $error")
+                        scrollMessagesToBottomFinal()
                         updateUI()
                         // 重要：网络错误时不再自动重新监听，否则会陷入无限循环
                         // 让用户决定是否继续（可手动点击麦克风或文本输入）
@@ -1176,18 +1178,20 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     Log.e(TAG, "Qwen TTS 错误: $error, fallback 到 MiMo TTS")
                     runOnUiThread {
                         cancelSpeakingTimeout()
+                        // 单向 fallback: Qwen → MiMo → Edge → Android，绝不反向
                         currentTtsEngine = TtsEngine.MIMO_TTS
-                        // 不保存偏好，仅临时降级，对话结束后恢复用户选择
                         showErrorBanner("Qwen TTS failed, switching to MiMo TTS", 3000)
                         updateUI()
                         scheduleSpeakingTimeout()
+                        // 先停止 Qwen TTS，确保 isSynthesizing 被重置
+                        qwenTtsService.stop()
                         synthesizeWithMimoTts(text, currentDuix)
                     }
                 }
             })
         } catch (e: Exception) {
             Log.e(TAG, "Qwen TTS 启动异常", e)
-            // fallback
+            // fallback 到 MiMo TTS
             runOnUiThread {
                 currentTtsEngine = TtsEngine.MIMO_TTS
                 updateUI()
@@ -1260,24 +1264,26 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 }
 
                 override fun onError(error: String) {
-                    Log.e(TAG, "MiMo TTS 错误: $error, fallback 到 Qwen TTS")
+                    Log.e(TAG, "MiMo TTS 错误: $error, fallback 到 Edge TTS")
                     runOnUiThread {
                         cancelSpeakingTimeout()
-                        currentTtsEngine = TtsEngine.QWEN_TTS
-                        // 不保存偏好，仅临时降级，对话结束后恢复用户选择
-                        showErrorBanner("MiMo TTS failed, switching to Qwen TTS", 3000)
+                        // 单向 fallback: MiMo → Edge → Android，绝不反向到 Qwen
+                        currentTtsEngine = TtsEngine.EDGE_TTS
+                        showErrorBanner("MiMo TTS failed, switching to Edge TTS", 3000)
                         updateUI()
                         scheduleSpeakingTimeout()
-                        synthesizeWithQwenTts(text, currentDuix)
+                        // 先停止 MiMo TTS，确保 isSynthesizing 被重置
+                        mimoTtsService.stop()
+                        synthesizeWithEdgeTts(text, currentDuix)
                     }
                 }
             })
         } catch (e: Exception) {
             Log.e(TAG, "MiMo TTS 启动异常", e)
             runOnUiThread {
-                currentTtsEngine = TtsEngine.QWEN_TTS
+                currentTtsEngine = TtsEngine.EDGE_TTS
                 updateUI()
-                synthesizeWithQwenTts(text, currentDuix)
+                synthesizeWithEdgeTts(text, currentDuix)
             }
         }
     }
@@ -1813,22 +1819,24 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     }
 
     private fun showAiBubble(thinking: Boolean, text: String) {
-        // [Phase 2.2] 改为操作 messageAdapter
         if (thinking) {
-            // 开始思考：插入一条"思考中"占位消息
             messageAdapter.append(MessageData(MessageData.Role.AI, "", isThinking = true))
             scrollMessagesToBottom()
         } else {
-            // 更新最后一条 AI 消息的文本
             val msgs = messageAdapter.snapshot()
             if (msgs.isNotEmpty() && msgs.last().role == MessageData.Role.AI) {
                 messageAdapter.updateLast(MessageData(MessageData.Role.AI, text, isThinking = false))
+                // 流式更新时不滚动，避免列表跳动；只在内容高度变化时才滚动
             } else {
                 messageAdapter.append(MessageData(MessageData.Role.AI, text))
+                scrollMessagesToBottom()
             }
-            // 每次更新都滚动到底部（防抖机制避免流式回调时疯狂滚动）
-            scrollMessagesToBottom()
         }
+    }
+
+    /** LLM onComplete 时调用，确保最终滚动到底部 */
+    private fun scrollMessagesToBottomFinal() {
+        scrollMessagesToBottom()
     }
 
     /**
@@ -2623,13 +2631,12 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     }
 
     override fun autoFallbackTtsEngine() {
-        // TTS 引擎自动降级：切换到下一个可用的 TTS 引擎
-        val engines = TtsEngine.values()
-        val currentIndex = engines.indexOf(currentTtsEngine)
-        // 从下一个引擎开始，找到第一个可用的
-        for (i in 1..engines.size) {
-            val nextIndex = (currentIndex + i) % engines.size
-            val nextEngine = engines[nextIndex]
+        // TTS 引擎单向降级：Qwen → MiMo → Edge → Android（绝不反向循环）
+        val fallbackChain = listOf(TtsEngine.QWEN_TTS, TtsEngine.MIMO_TTS, TtsEngine.EDGE_TTS, TtsEngine.ANDROID_TTS)
+        val currentIndex = fallbackChain.indexOf(currentTtsEngine)
+        // 只向后查找，不循环
+        for (i in (currentIndex + 1) until fallbackChain.size) {
+            val nextEngine = fallbackChain[i]
             val isReady = when (nextEngine) {
                 TtsEngine.QWEN_TTS -> true
                 TtsEngine.MIMO_TTS -> true
@@ -2637,14 +2644,11 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 TtsEngine.ANDROID_TTS -> ::androidTtsService.isInitialized && androidTtsService.isReady()
             }
             if (isReady) {
-                if (currentTtsEngine != nextEngine) {
-                    val oldName = getTtsEngineDisplayName(currentTtsEngine)
-                    currentTtsEngine = nextEngine
-                    // 不保存偏好，仅临时降级，对话结束后恢复用户选择
-                    val newName = getTtsEngineDisplayName(nextEngine)
-                    Log.i(TAG, "[AUTO-FALLBACK] TTS 引擎降级: $oldName → $newName")
-                    showErrorBanner("TTS auto-fallback: $oldName → $newName", 3000)
-                }
+                val oldName = getTtsEngineDisplayName(currentTtsEngine)
+                currentTtsEngine = nextEngine
+                val newName = getTtsEngineDisplayName(nextEngine)
+                Log.i(TAG, "[AUTO-FALLBACK] TTS 引擎降级: $oldName → $newName")
+                showErrorBanner("TTS auto-fallback: $oldName → $newName", 3000)
                 return
             }
         }

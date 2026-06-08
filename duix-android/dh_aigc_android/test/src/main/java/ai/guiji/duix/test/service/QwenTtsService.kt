@@ -92,7 +92,7 @@ class QwenTtsService {
                     put("session", JSONObject().apply {
                         put("voice", voice)
                         put("mode", "server_commit")  // 服务端自动判断合成时机
-                        put("language_type", "Chinese")
+                        put("language_type", "auto")  // 自动检测语言，支持中英文混合
                         put("response_format", "pcm")
                         put("sample_rate", SAMPLE_RATE)
                     })
