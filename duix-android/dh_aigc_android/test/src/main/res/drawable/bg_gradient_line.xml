@@ -8,6 +8,6 @@
         android:centerColor="#7C3AED"
         android:endColor="#06B6D4" />
     <size
-        android:width="match_parent"
+        android:width="360dp"
         android:height="1dp" />
 </shape>
