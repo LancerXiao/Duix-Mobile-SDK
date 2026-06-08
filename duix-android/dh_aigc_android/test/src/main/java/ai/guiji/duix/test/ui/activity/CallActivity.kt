@@ -240,6 +240,12 @@ class CallActivity : BaseActivity() {
             finish()
         }
 
+        // [Phase 7.2 P0-4] 新建对话按钮 - 清空消息历史，开始新对话
+        binding.btnNewChat.setOnClickListener {
+            performHapticFeedback()
+            startNewChat()
+        }
+
         // 静音切换
         binding.btnMute.setOnClickListener {
             isMuted = true
@@ -1474,6 +1480,44 @@ class CallActivity : BaseActivity() {
 
     private fun dpToPx(dp: Int): Int =
         (dp * resources.displayMetrics.density).toInt()
+
+    /**
+     * [Phase 7.2 P0-4] 开始新对话
+     * - 清空消息历史（UI + LLM）
+     * - 重置状态机
+     * - 显示系统消息提示
+     * - 重新进入自动监听
+     */
+    private fun startNewChat() {
+        try {
+            // 1) 清空 UI 消息
+            messageAdapter.clear()
+            // 2) 清空 LLM 上下文
+            try { llmService.clearHistory() } catch (e: Exception) { Log.e(TAG, "清空LLM历史失败", e) }
+            // 3) 重置状态机
+            currentState = State.IDLE
+            // 4) 加一条系统消息提示
+            val sysMsg = MessageData(
+                role = MessageData.Role.SYSTEM,
+                text = "新对话已开始",
+                timestamp = System.currentTimeMillis()
+            )
+            messageAdapter.append(sysMsg)
+            // 5) 更新 UI
+            updateStatus("新对话")
+            updateUI()
+            // 6) 滚动到底部
+            scrollMessagesToBottom()
+            // 7) 自动重新进入监听（如已就绪）
+            cancelAutoListen()
+            if (isDuiXReady) {
+                scheduleAutoListen()
+            }
+            Log.i(TAG, "[DIAG] startNewChat 完成")
+        } catch (e: Exception) {
+            Log.e(TAG, "[DIAG] startNewChat 异常", e)
+        }
+    }
 
     private fun scheduleAutoListen() {
         cancelAutoListen()
