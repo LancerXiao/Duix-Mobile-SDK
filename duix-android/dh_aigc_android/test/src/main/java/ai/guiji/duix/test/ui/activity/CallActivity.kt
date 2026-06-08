@@ -50,6 +50,9 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     companion object {
         const val GL_CONTEXT_VERSION = 2
         private const val AUTO_LISTEN_DELAY_MS = 1200L
+        // 数字人说话结束后 auto-listen 的额外延迟，给音频硬件足够时间停止播放
+        // 防止 ASR 录到数字人自己的声音（回声问题）
+        private const val POST_SPEAKING_LISTEN_DELAY_MS = 2000L
         // ASR partial 文字稳定超时（毫秒）：超过这个时间 partial 不变就认为说话结束
         private const val STABLE_TEXT_TIMEOUT_MS = 1500L
         // [Bug fix] SPEAKING 状态超时保护：如果 DUIX SDK 没有回调 AUDIO_PLAY_END，
@@ -186,6 +189,12 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         stateEnterTimeMs = System.currentTimeMillis()
         Log.d(TAG, "[STATE] ${if (isIllegalTransition(oldState, newState)) "(修正后) " else ""}$oldState -> $newState")
 
+        // 进入 SPEAKING 状态时取消所有待执行的 auto-listen
+        // 防止 ASR 在数字人说话期间启动，导致录到数字人自己的声音（回声问题）
+        if (newState == State.SPEAKING) {
+            cancelAutoListen()
+        }
+
         // 对话结束后恢复用户选择的TTS引擎（fallback只是临时降级）
         if (newState == State.IDLE && currentTtsEngine != userSelectedTtsEngine) {
             Log.i(TAG, "[STATE] 恢复用户选择的TTS引擎: ${getTtsEngineDisplayName(currentTtsEngine)} → ${getTtsEngineDisplayName(userSelectedTtsEngine)}")
@@ -256,7 +265,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             setState(State.IDLE)
             updateStatus("Ready")
             updateUI()
-            scheduleAutoListen()
+            scheduleAutoListenAfterSpeaking()
         }
     }
 
@@ -568,7 +577,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         cancelSpeakingTimeout()
                         setState(State.IDLE)
                         updateUI()
-                        scheduleAutoListen()
+                        // 数字人说话结束后使用更长延迟启动 ASR，防止录到回声
+                        scheduleAutoListenAfterSpeaking()
                     }
                 }
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_ERROR -> {
@@ -578,7 +588,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         updateStatus("Playback error")
                         setState(State.IDLE)
                         updateUI()
-                        scheduleAutoListen()
+                        scheduleAutoListenAfterSpeaking()
                     }
                 }
                 Constant.CALLBACK_EVENT_MOTION_START -> {}
@@ -853,6 +863,11 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 }
 
                 override fun onPartialResult(text: String) {
+                    // 数字人说话期间丢弃 ASR 结果（防止回声）
+                    if (currentState == State.SPEAKING) {
+                        Log.d(TAG, "[ECHO] ASR.onPartialResult 丢弃: SPEAKING状态, text='${text.take(30)}'")
+                        return
+                    }
                     // 用户主动停止后，迟到的 ASR 回调不再更新UI
                     if (userStoppedAsr) {
                         Log.d(TAG, "[DIAG] ASR.onPartialResult 丢弃: userStoppedAsr=true, text='${text.take(30)}'")
@@ -876,6 +891,11 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 override fun onFinalResult(text: String) {
                     Log.i(TAG, "[DIAG] ASR.onFinalResult: text='$text', userStoppedAsr=$userStoppedAsr")
                     runOnUiThread {
+                        // 数字人说话期间丢弃 ASR 结果（防止回声）
+                        if (currentState == State.SPEAKING) {
+                            Log.w(TAG, "[ECHO] ASR.onFinalResult 丢弃: SPEAKING状态, text='$text'")
+                            return@runOnUiThread
+                        }
                         // VAD 触发了真正的 final，清理文字稳定定时器和累积 partial
                         handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
                         lastPartialText = ""
@@ -1159,18 +1179,9 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         } catch (e: Throwable) {
                             Log.e(TAG, "stopPush 异常", e)
                         }
-                        // [Bug fix] TTS 完成后延迟恢复 IDLE，不依赖 AUDIO_PLAY_END
-                        runOnUiThread {
-                            mainHandler.postDelayed({
-                                if (currentState == State.SPEAKING) {
-                                    cancelSpeakingTimeout()
-                                    setState(State.IDLE)
-                                    updateStatus("Ready")
-                                updateUI()
-                                scheduleAutoListen()
-                            }
-                        }, 1500L) // 给数字人 1.5s 播放完最后的音频
-                        }
+                        // 不再自己恢复 IDLE！依赖 AUDIO_PLAY_END 回调恢复 IDLE
+                        // 这样可以确保数字人真正播放完毕后才启动 ASR，避免回声
+                        // SPEAKING_TIMEOUT_MS (8s) 超时保护兜底
                     }.start()
                 }
 
@@ -1249,17 +1260,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         } catch (e: Throwable) {
                             Log.e(TAG, "stopPush 异常", e)
                         }
-                        runOnUiThread {
-                            mainHandler.postDelayed({
-                                if (currentState == State.SPEAKING) {
-                                    cancelSpeakingTimeout()
-                                    setState(State.IDLE)
-                                    updateStatus("Ready")
-                                    updateUI()
-                                    scheduleAutoListen()
-                                }
-                            }, 1500L)
-                        }
+                        // 不再自己恢复 IDLE！依赖 AUDIO_PLAY_END 回调恢复 IDLE
+                        // SPEAKING_TIMEOUT_MS (8s) 超时保护兜底
                     }.start()
                 }
 
@@ -1326,18 +1328,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                                         Log.e(TAG, "stopPush异常", e)
                                     }
                                     edgeTtsFailCount = 0
-                                    // [Bug fix] TTS 完成后延迟恢复 IDLE，不依赖 AUDIO_PLAY_END
-                                    runOnUiThread {
-                                        mainHandler.postDelayed({
-                                            if (currentState == State.SPEAKING) {
-                                                cancelSpeakingTimeout()
-                                                setState(State.IDLE)
-                                                updateStatus("Ready")
-                                                updateUI()
-                                                scheduleAutoListen()
-                                            }
-                                        }, 1500L)
-                                    }
+                                    // 不再自己恢复 IDLE！依赖 AUDIO_PLAY_END 回调恢复 IDLE
+                                    // SPEAKING_TIMEOUT_MS (8s) 超时保护兜底
                                 }
 
                                 override fun onError(error: String) {
@@ -1443,18 +1435,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                             } catch (e: Exception) {
                                 Log.e(TAG, "stopPush异常", e)
                             }
-                            // [Bug fix] TTS 完成后延迟恢复 IDLE，不依赖 AUDIO_PLAY_END
-                            runOnUiThread {
-                                mainHandler.postDelayed({
-                                    if (currentState == State.SPEAKING) {
-                                        cancelSpeakingTimeout()
-                                        setState(State.IDLE)
-                                        updateStatus("Ready")
-                                        updateUI()
-                                        scheduleAutoListen()
-                                    }
-                                }, 1500L)
-                            }
+                            // 不再自己恢复 IDLE！依赖 AUDIO_PLAY_END 回调恢复 IDLE
+                            // SPEAKING_TIMEOUT_MS (8s) 超时保护兜底
                         } catch (e: Exception) {
                             Log.e(TAG, "Android TTS PCM推送异常", e)
                             runOnUiThread {
@@ -2117,6 +2099,14 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     private fun scheduleAutoListen() {
         cancelAutoListen()
         mainHandler.postDelayed(autoListenRunnable, AUTO_LISTEN_DELAY_MS)
+    }
+
+    /**
+     * 数字人说话结束后调度 auto-listen，使用更长延迟防止 ASR 录到回声
+     */
+    private fun scheduleAutoListenAfterSpeaking() {
+        cancelAutoListen()
+        mainHandler.postDelayed(autoListenRunnable, POST_SPEAKING_LISTEN_DELAY_MS)
     }
 
     private fun cancelAutoListen() {
