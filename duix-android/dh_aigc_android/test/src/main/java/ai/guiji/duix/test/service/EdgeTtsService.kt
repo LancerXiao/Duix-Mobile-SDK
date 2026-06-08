@@ -41,6 +41,7 @@ class EdgeTtsService {
 
     private var webSocket: WebSocket? = null
     private val isSynthesizing = AtomicBoolean(false)
+    private var shouldStop = false  // 主动停止标志
 
     // 收集音频数据 - 使用synchronized保护
     private val audioChunks = mutableListOf<ByteArray>()
@@ -68,6 +69,7 @@ class EdgeTtsService {
             callback.onError("正在合成中，请稍候")
             return
         }
+        shouldStop = false
 
         synchronized(audioChunks) {
             audioChunks.clear()
@@ -84,7 +86,7 @@ class EdgeTtsService {
 
         // 设置超时
         timeoutRunnable = Runnable {
-            if (isSynthesizing.get()) {
+            if (isSynthesizing.get() && !shouldStop) {
                 Log.w(TAG, "Synthesis timeout, retryCount=$retryCount")
                 try {
                     webSocket?.close(1000, "Timeout")
@@ -92,12 +94,14 @@ class EdgeTtsService {
                     Log.e(TAG, "关闭WebSocket异常", e)
                 }
                 isSynthesizing.set(false)
-                if (retryCount < MAX_RETRIES) {
+                if (retryCount < MAX_RETRIES && !shouldStop) {
                     Log.i(TAG, "Retrying synthesis (attempt ${retryCount + 1}/$MAX_RETRIES)")
                     android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        synthesizeWithRetry(text, voice, callback, retryCount + 1)
+                        if (!shouldStop) {
+                            synthesizeWithRetry(text, voice, callback, retryCount + 1)
+                        }
                     }, RETRY_DELAY_MS)
-                } else {
+                } else if (!shouldStop) {
                     callback.onError("语音合成超时，请重试")
                 }
             }
@@ -168,10 +172,14 @@ class EdgeTtsService {
                 isSynthesizing.set(false)
                 cancelTimeout()
 
+                if (shouldStop) return
+
                 if (retryCount < MAX_RETRIES) {
                     Log.i(TAG, "Retrying synthesis (attempt ${retryCount + 1}/$MAX_RETRIES)")
                     android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        synthesizeWithRetry(text, voice, callback, retryCount + 1)
+                        if (!shouldStop) {
+                            synthesizeWithRetry(text, voice, callback, retryCount + 1)
+                        }
                     }, RETRY_DELAY_MS)
                 } else {
                     val errorMsg = when {
@@ -224,6 +232,7 @@ class EdgeTtsService {
     }
 
     fun stop() {
+        shouldStop = true
         isSynthesizing.set(false)
         cancelTimeout()
         try {
