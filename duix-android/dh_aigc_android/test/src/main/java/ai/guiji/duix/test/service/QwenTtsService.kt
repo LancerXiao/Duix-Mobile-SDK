@@ -7,6 +7,7 @@ import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 阿里云百炼平台 TTS 服务 - 使用 qwen3-tts-flash-realtime 实时语音合成
@@ -35,6 +36,8 @@ class QwenTtsService {
         private const val RETRY_DELAY_MS = 800L
         private const val CONNECT_TIMEOUT_S = 10L
         private const val READ_TIMEOUT_S = 60L
+        // WebSocket 无数据超时：如果连接建立后 15 秒内没有收到任何音频数据，认为连接异常
+        private const val WS_NO_DATA_TIMEOUT_MS = 15000L
     }
 
     private val client = OkHttpClient.Builder()
@@ -47,6 +50,13 @@ class QwenTtsService {
     private var webSocket: WebSocket? = null
     private val isSynthesizing = AtomicBoolean(false)
     private var shouldStop = false  // 主动停止标志
+
+    // 会话 ID：每次 synthesize 递增，用于区分旧 WebSocket 回调和新请求
+    private val sessionId = AtomicInteger(0)
+
+    // 无数据超时检测
+    private val timeoutHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var noDataTimeoutRunnable: Runnable? = null
 
     interface Callback {
         fun onAudioData(pcmData: ByteArray)  // PCM 24kHz mono 16bit
@@ -75,16 +85,31 @@ class QwenTtsService {
         }
         shouldStop = false
 
-        Log.i(TAG, "Qwen TTS 开始 (第${retryCount + 1}次): voice=$voice, text=${text.take(30)}...")
+        // 递增会话 ID，旧 WebSocket 的回调会因 ID 不匹配而被忽略
+        val currentSessionId = sessionId.incrementAndGet()
+
+        Log.i(TAG, "Qwen TTS 开始 (第${retryCount + 1}次, session=$currentSessionId): voice=$voice, text=${text.take(30)}...")
 
         val request = Request.Builder()
             .url(AiConfig.TTS_WS_URL)
             .addHeader("Authorization", "Bearer ${AiConfig.DASHSCOPE_API_KEY}")
             .build()
 
+        // 是否已收到音频数据（用于无数据超时检测）
+        var receivedAudioData = false
+
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.i(TAG, "TTS WebSocket 已连接")
+                // 检查是否是当前会话
+                if (currentSessionId != sessionId.get()) {
+                    Log.w(TAG, "忽略旧会话 onOpen (session=$currentSessionId, current=${sessionId.get()})")
+                    return
+                }
+                Log.i(TAG, "TTS WebSocket 已连接 (session=$currentSessionId)")
+
+                // 启动无数据超时检测
+                scheduleNoDataTimeout(currentSessionId, callback, retryCount, text, voice)
+
                 // 1. 发送 session.update 设置音色和参数
                 val sessionUpdate = JSONObject().apply {
                     put("event_id", "event_" + UUID.randomUUID().toString().replace("-", "").take(16))
@@ -119,6 +144,13 @@ class QwenTtsService {
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                // 检查是否是当前会话
+                if (currentSessionId != sessionId.get()) {
+                    Log.d(TAG, "忽略旧会话消息 (session=$currentSessionId)")
+                    return
+                }
+                if (shouldStop) return
+
                 try {
                     val message = JSONObject(text)
                     val eventType = message.optString("type", "")
@@ -131,9 +163,14 @@ class QwenTtsService {
                             Log.i(TAG, "TTS response 创建")
                         }
                         "response.audio.delta" -> {
+                            // 收到音频数据，取消无数据超时
+                            if (!receivedAudioData) {
+                                receivedAudioData = true
+                                cancelNoDataTimeout()
+                            }
                             // Base64 编码的 PCM 音频数据
                             val audioB64 = message.optString("delta", "")
-                            if (audioB64.isNotEmpty() && !shouldStop) {
+                            if (audioB64.isNotEmpty()) {
                                 try {
                                     val audioBytes = android.util.Base64.decode(audioB64, android.util.Base64.DEFAULT)
                                     if (audioBytes.isNotEmpty()) {
@@ -148,18 +185,18 @@ class QwenTtsService {
                             Log.i(TAG, "TTS 音频流完成")
                         }
                         "response.done" -> {
-                            Log.i(TAG, "TTS 响应完成")
-                            if (!shouldStop) {
-                                isSynthesizing.set(false)
-                                callback.onComplete()
-                            }
+                            Log.i(TAG, "TTS 响应完成 (session=$currentSessionId)")
+                            cancelNoDataTimeout()
+                            isSynthesizing.set(false)
+                            callback.onComplete()
                         }
                         "error" -> {
                             val errObj = message.optJSONObject("error")
                             val errMsg = errObj?.optString("message", "Unknown") ?: "Unknown"
                             val errCode = errObj?.optString("code", "") ?: ""
-                            Log.e(TAG, "TTS 错误: $errCode - $errMsg")
-                            handleError("$errCode: $errMsg", callback, retryCount, text, voice)
+                            Log.e(TAG, "TTS 错误: $errCode - $errMsg (session=$currentSessionId)")
+                            cancelNoDataTimeout()
+                            handleError("$errCode: $errMsg", callback, retryCount, text, voice, currentSessionId)
                         }
                         "session.finished" -> {
                             Log.i(TAG, "TTS session 结束")
@@ -171,29 +208,72 @@ class QwenTtsService {
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                if (currentSessionId != sessionId.get() || shouldStop) return
                 // 实时TTS协议下一般不会收到二进制消息，备用
                 val data = bytes.toByteArray()
-                if (data.isNotEmpty() && !shouldStop) {
+                if (data.isNotEmpty()) {
+                    if (!receivedAudioData) {
+                        receivedAudioData = true
+                        cancelNoDataTimeout()
+                    }
                     callback.onAudioData(data)
                 }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e(TAG, "TTS WebSocket 失败 (attempt ${retryCount + 1}): ${t.message}", t)
-                handleError("WebSocket失败: ${t.message ?: "未知"}", callback, retryCount, text, voice)
+                // 检查是否是当前会话
+                if (currentSessionId != sessionId.get()) {
+                    Log.d(TAG, "忽略旧会话 onFailure (session=$currentSessionId)")
+                    return
+                }
+                Log.e(TAG, "TTS WebSocket 失败 (attempt ${retryCount + 1}, session=$currentSessionId): ${t.message}", t)
+                cancelNoDataTimeout()
+                handleError("WebSocket失败: ${t.message ?: "未知"}", callback, retryCount, text, voice, currentSessionId)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.i(TAG, "TTS WebSocket 已关闭: $code $reason")
-                isSynthesizing.set(false)
-                if (code != 1000 && code != 1005 && !shouldStop) {
-                    // 非正常关闭且未主动停止，可能需要重试
-                    Log.w(TAG, "TTS 非正常关闭 code=$code")
+                Log.i(TAG, "TTS WebSocket 已关闭: $code $reason (session=$currentSessionId, current=${sessionId.get()})")
+                // 修复竞态条件：只在当前会话 ID 匹配时才重置 isSynthesizing
+                // 避免旧 WebSocket 的 onClosed 干扰新请求
+                if (currentSessionId == sessionId.get()) {
+                    isSynthesizing.set(false)
+                    if (code != 1000 && code != 1005 && !shouldStop) {
+                        // 非正常关闭且未主动停止，可能需要重试
+                        Log.w(TAG, "TTS 非正常关闭 code=$code, session=$currentSessionId")
+                    }
+                } else {
+                    Log.d(TAG, "忽略旧会话 onClosed (session=$currentSessionId, current=${sessionId.get()})")
                 }
             }
         }
 
         webSocket = client.newWebSocket(request, listener)
+    }
+
+    /**
+     * 无数据超时检测：连接建立后如果长时间没有收到音频数据，主动断开并重试
+     */
+    private fun scheduleNoDataTimeout(sessionId: Int, callback: Callback, retryCount: Int, text: String, voice: String) {
+        cancelNoDataTimeout()
+        noDataTimeoutRunnable = Runnable {
+            if (this.sessionId.get() != sessionId || shouldStop) return@Runnable
+            if (isSynthesizing.get()) {
+                Log.w(TAG, "Qwen TTS 无数据超时 (${WS_NO_DATA_TIMEOUT_MS}ms), session=$sessionId")
+                // 关闭当前 WebSocket
+                try {
+                    webSocket?.close(1000, "No data timeout")
+                } catch (e: Exception) {
+                    Log.w(TAG, "关闭超时 WebSocket 异常: ${e.message}")
+                }
+                handleError("连接超时：${WS_NO_DATA_TIMEOUT_MS}ms 内未收到音频数据", callback, retryCount, text, voice, sessionId)
+            }
+        }
+        timeoutHandler.postDelayed(noDataTimeoutRunnable!!, WS_NO_DATA_TIMEOUT_MS)
+    }
+
+    private fun cancelNoDataTimeout() {
+        noDataTimeoutRunnable?.let { timeoutHandler.removeCallbacks(it) }
+        noDataTimeoutRunnable = null
     }
 
     /**
@@ -204,8 +284,14 @@ class QwenTtsService {
         callback: Callback,
         retryCount: Int,
         text: String,
-        voice: String
+        voice: String,
+        errorSessionId: Int
     ) {
+        // 检查是否是当前会话（避免旧会话的错误回调干扰新请求）
+        if (errorSessionId != sessionId.get()) {
+            Log.d(TAG, "忽略旧会话错误 (session=$errorSessionId, current=${sessionId.get()})")
+            return
+        }
         isSynthesizing.set(false)
         if (shouldStop) {
             // 用户主动停止，不重试
@@ -214,6 +300,11 @@ class QwenTtsService {
         if (retryCount < MAX_RETRIES) {
             Log.w(TAG, "TTS 失败，${RETRY_DELAY_MS}ms 后重试 (${retryCount + 1}/$MAX_RETRIES)")
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                // 重试前再次检查是否已被新请求取代
+                if (shouldStop || errorSessionId != this.sessionId.get()) {
+                    Log.d(TAG, "重试取消: shouldStop=$shouldStop, session=$errorSessionId vs ${this.sessionId.get()}")
+                    return@postDelayed
+                }
                 synthesizeInternal(text, voice, callback, retryCount + 1)
             }, RETRY_DELAY_MS)
         } else {
@@ -228,6 +319,9 @@ class QwenTtsService {
     fun stop() {
         shouldStop = true
         isSynthesizing.set(false)
+        cancelNoDataTimeout()
+        // 递增 sessionId 使旧 WebSocket 的回调失效
+        sessionId.incrementAndGet()
         try {
             // 发送 session.finish 让服务端清理
             webSocket?.send(JSONObject().apply {
