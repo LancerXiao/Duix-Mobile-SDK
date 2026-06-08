@@ -269,6 +269,32 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         }
     }
 
+    // TTS 完成后的延迟恢复 Runnable（stopPush 后 2s 如果 AUDIO_PLAY_END 没来就恢复 IDLE）
+    private var ttsCompletionRunnable: Runnable? = null
+
+    /**
+     * 安排 TTS 完成后的延迟恢复
+     * 在 stopPush() 后调用，如果 AUDIO_PLAY_END 在 delayMs 内没来就恢复 IDLE
+     */
+    private fun scheduleTtsCompletionRecovery(tag: String, delayMs: Long = 2000L) {
+        cancelTtsCompletionRecovery()
+        ttsCompletionRunnable = Runnable {
+            if (currentState == State.SPEAKING) {
+                Log.i(TAG, "$tag: stopPush 后 ${delayMs}ms 未收到 AUDIO_PLAY_END，恢复 IDLE")
+                setState(State.IDLE)
+                updateStatus("Ready")
+                updateUI()
+                scheduleAutoListenAfterSpeaking()
+            }
+        }
+        mainHandler.postDelayed(ttsCompletionRunnable!!, delayMs)
+    }
+
+    private fun cancelTtsCompletionRecovery() {
+        ttsCompletionRunnable?.let { mainHandler.removeCallbacks(it) }
+        ttsCompletionRunnable = null
+    }
+
     private fun scheduleSpeakingTimeout() {
         cancelSpeakingTimeout()
         mainHandler.postDelayed(speakingTimeoutRunnable, SPEAKING_TIMEOUT_MS)
@@ -579,6 +605,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     runOnUiThread {
                         Log.i(TAG, "AUDIO_PLAY_END: 数字人播放完成")
                         cancelSpeakingTimeout()
+                        cancelTtsCompletionRecovery()
                         setState(State.IDLE)
                         updateUI()
                         // 数字人说话结束后使用更长延迟启动 ASR，防止录到回声
@@ -589,6 +616,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     runOnUiThread {
                         Log.e(TAG, "AUDIO_PLAY_ERROR: 数字人播放出错: $msg")
                         cancelSpeakingTimeout()
+                        cancelTtsCompletionRecovery()
                         updateStatus("Playback error")
                         setState(State.IDLE)
                         updateUI()
@@ -1186,15 +1214,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         // stopPush 后延迟恢复 IDLE：如果 AUDIO_PLAY_END 在 2s 内没来就恢复
                         runOnUiThread {
                             cancelSpeakingTimeout()
-                            mainHandler.postDelayed({
-                                if (currentState == State.SPEAKING) {
-                                    Log.i(TAG, "Qwen TTS: stopPush 后 2s 未收到 AUDIO_PLAY_END，恢复 IDLE")
-                                    setState(State.IDLE)
-                                    updateStatus("Ready")
-                                    updateUI()
-                                    scheduleAutoListenAfterSpeaking()
-                                }
-                            }, 2000L)
+                            scheduleTtsCompletionRecovery("Qwen TTS")
                         }
                     }.start()
                 }
@@ -1274,18 +1294,9 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         } catch (e: Throwable) {
                             Log.e(TAG, "stopPush 异常", e)
                         }
-                        // stopPush 后延迟恢复 IDLE：如果 AUDIO_PLAY_END 在 2s 内没来就恢复
                         runOnUiThread {
                             cancelSpeakingTimeout()
-                            mainHandler.postDelayed({
-                                if (currentState == State.SPEAKING) {
-                                    Log.i(TAG, "MiMo TTS: stopPush 后 2s 未收到 AUDIO_PLAY_END，恢复 IDLE")
-                                    setState(State.IDLE)
-                                    updateStatus("Ready")
-                                    updateUI()
-                                    scheduleAutoListenAfterSpeaking()
-                                }
-                            }, 2000L)
+                            scheduleTtsCompletionRecovery("MiMo TTS")
                         }
                     }.start()
                 }
@@ -1353,19 +1364,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                                         Log.e(TAG, "stopPush异常", e)
                                     }
                                     edgeTtsFailCount = 0
-                                    // stopPush 后延迟恢复 IDLE：如果 AUDIO_PLAY_END 在 2s 内没来就恢复
-                                    // 这样既不会太早（避免 ASR 回声），也不会太晚（避免用户等太久）
                                     runOnUiThread {
                                         cancelSpeakingTimeout()
-                                        mainHandler.postDelayed({
-                                            if (currentState == State.SPEAKING) {
-                                                Log.i(TAG, "Edge TTS: stopPush 后 2s 未收到 AUDIO_PLAY_END，恢复 IDLE")
-                                                setState(State.IDLE)
-                                                updateStatus("Ready")
-                                                updateUI()
-                                                scheduleAutoListenAfterSpeaking()
-                                            }
-                                        }, 2000L)
+                                        scheduleTtsCompletionRecovery("Edge TTS")
+                                    }
                                     }
                                 }
 
@@ -1472,18 +1474,9 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                             } catch (e: Exception) {
                                 Log.e(TAG, "stopPush异常", e)
                             }
-                            // stopPush 后延迟恢复 IDLE：如果 AUDIO_PLAY_END 在 2s 内没来就恢复
                             runOnUiThread {
                                 cancelSpeakingTimeout()
-                                mainHandler.postDelayed({
-                                    if (currentState == State.SPEAKING) {
-                                        Log.i(TAG, "Android TTS: stopPush 后 2s 未收到 AUDIO_PLAY_END，恢复 IDLE")
-                                        setState(State.IDLE)
-                                        updateStatus("Ready")
-                                        updateUI()
-                                        scheduleAutoListenAfterSpeaking()
-                                    }
-                                }, 2000L)
+                                scheduleTtsCompletionRecovery("Android TTS")
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Android TTS PCM推送异常", e)
@@ -1504,10 +1497,11 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 override fun onError(error: String) {
                     Log.e(TAG, "Android TTS 合成失败: $error")
                     runOnUiThread {
+                        cancelSpeakingTimeout()
                         updateStatus("Synthesis failed")
                         setState(State.IDLE)
                         updateUI()
-                        scheduleAutoListen()
+                        scheduleAutoListenAfterSpeaking()
                     }
                 }
             })
@@ -1525,6 +1519,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     private fun stopSpeaking() {
         cancelSpeakingTimeout()
         cancelThinkingTimeout()
+        cancelTtsCompletionRecovery()
         try {
             edgeTtsService.stop()
         } catch (e: Exception) {
@@ -1536,9 +1531,19 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             Log.e(TAG, "停止Qwen TTS异常", e)
         }
         try {
+            mimoTtsService.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止MiMo TTS异常", e)
+        }
+        try {
             if (::androidTtsService.isInitialized) androidTtsService.stop()
         } catch (e: Exception) {
             Log.e(TAG, "停止Android TTS异常", e)
+        }
+        try {
+            duix?.stopPush()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止push异常", e)
         }
         try {
             duix?.stopAudio()
@@ -2591,6 +2596,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         cancelAutoListen()
         cancelSpeakingTimeout()
         cancelThinkingTimeout()
+        cancelTtsCompletionRecovery()
         try {
             if (::asrService.isInitialized) asrService.destroy()
         } catch (e: Exception) {
@@ -2602,9 +2608,24 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             Log.e(TAG, "停止Edge TTS异常", e)
         }
         try {
+            qwenTtsService.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止Qwen TTS异常", e)
+        }
+        try {
+            mimoTtsService.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止MiMo TTS异常", e)
+        }
+        try {
             if (::androidTtsService.isInitialized) androidTtsService.destroy()
         } catch (e: Exception) {
             Log.e(TAG, "销毁Android TTS异常", e)
+        }
+        try {
+            duix?.stopPush()
+        } catch (e: Exception) {
+            Log.e(TAG, "停止push异常", e)
         }
         try {
             duix?.release()
@@ -2892,10 +2913,12 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         runOnUiThread {
             cancelSpeakingTimeout()
             cancelThinkingTimeout()
+            cancelTtsCompletionRecovery()
             cancelAutoListen()
             // 停止所有 TTS
             try { edgeTtsService.stop() } catch (_: Exception) {}
             try { qwenTtsService.stop() } catch (_: Exception) {}
+            try { mimoTtsService.stop() } catch (_: Exception) {}
             try { if (::androidTtsService.isInitialized) androidTtsService.stop() } catch (_: Exception) {}
             try { duix?.stopAudio() } catch (_: Exception) {}
             setState(State.IDLE)
