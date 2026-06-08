@@ -13,6 +13,7 @@ import ai.guiji.duix.test.service.AsrFallbackManager
 import ai.guiji.duix.test.service.EdgeTtsService
 import ai.guiji.duix.test.service.HybridAsrService
 import ai.guiji.duix.test.service.LlmService
+import ai.guiji.duix.test.service.MimoTtsService
 import ai.guiji.duix.test.service.Mp3ToPcmConverter
 import ai.guiji.duix.test.service.PcmResampler
 import ai.guiji.duix.test.service.QwenTtsService
