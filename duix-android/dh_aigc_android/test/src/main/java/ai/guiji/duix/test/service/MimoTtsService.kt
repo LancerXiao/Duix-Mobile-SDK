@@ -107,13 +107,13 @@ class MimoTtsService {
             override fun onResponse(call: Call, response: Response) {
                 try {
                     if (!response.isSuccessful) {
-                        val errorBody = response.body()?.string() ?: ""
-                        Log.e(TAG, "MiMo TTS HTTP 错误: ${response.code()} $errorBody")
-                        handleError("HTTP ${response.code()}: $errorBody", callback, retryCount, text, voice)
+                        val errorBody = response.body?.string() ?: ""
+                        Log.e(TAG, "MiMo TTS HTTP 错误: ${response.code} $errorBody")
+                        handleError("HTTP ${response.code}: $errorBody", callback, retryCount, text, voice)
                         return
                     }
 
-                    val responseBody = response.body()?.string()
+                    val responseBody = response.body?.string()
                     if (responseBody.isNullOrEmpty()) {
                         Log.e(TAG, "MiMo TTS 响应为空")
                         handleError("响应为空", callback, retryCount, text, voice)
