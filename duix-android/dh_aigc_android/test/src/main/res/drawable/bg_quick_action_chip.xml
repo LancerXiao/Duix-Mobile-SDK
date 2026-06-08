@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [Phase 4.3 P1-1] 快捷指令 chip 背景：磨砂半透白 + 描边 + 圆角 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#4DFFFFFF" />
+    <stroke
+        android:width="0.5dp"
+        android:color="#33FFFFFF" />
+    <corners android:radius="16dp" />
+</shape>

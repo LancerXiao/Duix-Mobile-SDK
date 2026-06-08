@@ -302,6 +302,13 @@ class CallActivity : BaseActivity() {
             }
         }
 
+        // [Phase 4.3 P1-1] 快捷指令 chip：5 个常用指令一键发送
+        setupQuickActionChip(binding.chipGreet, "你好，介绍一下你自己")
+        setupQuickActionChip(binding.chipJoke, "讲一个简短的笑话")
+        setupQuickActionChip(binding.chipPoem, "背一首你最喜欢的古诗")
+        setupQuickActionChip(binding.chipAdvice, "给我一些工作学习的建议")
+        setupQuickActionChip(binding.chipTranslate, "翻译成英文：人工智能正在改变世界")
+
         // 键盘发送
         binding.etInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEND) {
@@ -1516,6 +1523,22 @@ class CallActivity : BaseActivity() {
             Log.i(TAG, "[DIAG] startNewChat 完成")
         } catch (e: Exception) {
             Log.e(TAG, "[DIAG] startNewChat 异常", e)
+        }
+    }
+
+    /**
+     * [Phase 4.3 P1-1] 快捷指令 chip 点击：直接发送预设文本到 LLM
+     */
+    private fun setupQuickActionChip(chip: View, prompt: String) {
+        chip.setOnClickListener {
+            performHapticFeedback()
+            // 触觉反馈后立刻发送
+            sendToLlm(prompt)
+            // 自动隐藏键盘（如果有）
+            try {
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                imm.hideSoftInputFromWindow(binding.etInput.windowToken, 0)
+            } catch (e: Exception) { /* 静默 */ }
         }
     }
 

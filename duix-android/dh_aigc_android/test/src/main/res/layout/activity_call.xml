@@ -208,6 +208,54 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <!-- [Phase 4.3 P1-1] 快捷指令 chip 行：用户上手成本↓70% -->
+    <HorizontalScrollView
+        android:id="@+id/quickActionsScroll"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="6dp"
+        android:scrollbars="none"
+        android:fillViewport="true"
+        app:layout_constraintBottom_toTopOf="@+id/bottomPanel"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/chipGreet"
+                style="@style/QuickActionChip"
+                android:text="👋 打个招呼" />
+
+            <TextView
+                android:id="@+id/chipJoke"
+                style="@style/QuickActionChip"
+                android:text="😄 讲个笑话" />
+
+            <TextView
+                android:id="@+id/chipPoem"
+                style="@style/QuickActionChip"
+                android:text="📖 背首古诗" />
+
+            <TextView
+                android:id="@+id/chipAdvice"
+                style="@style/QuickActionChip"
+                android:text="💡 给我建议" />
+
+            <TextView
+                android:id="@+id/chipTranslate"
+                style="@style/QuickActionChip"
+                android:text="🌐 翻译一下" />
+
+        </LinearLayout>
+    </HorizontalScrollView>
+
     <!-- Bottom panel -->
     <LinearLayout
         android:id="@+id/bottomPanel"
