@@ -199,12 +199,10 @@ object MarkdownRenderer {
                 )
             }
             // 删除占位符（用空字符替换，保留 span 长度）
-            for (i in 0 until startTag.length) {
-                sb[startIdx + i] = ' '
-            }
-            for (i in 0 until endTag.length) {
-                sb[endIdx + i] = ' '
-            }
+            val spaces = " ".repeat(startTag.length)
+            sb.replace(startIdx, startIdx + startTag.length, spaces)
+            val endSpaces = " ".repeat(endTag.length)
+            sb.replace(endIdx, endIdx + endTag.length, endSpaces)
             searchFrom = blockEnd
         }
     }

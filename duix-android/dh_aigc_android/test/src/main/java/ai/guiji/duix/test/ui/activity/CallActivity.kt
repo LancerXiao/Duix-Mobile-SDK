@@ -14,6 +14,7 @@ import ai.guiji.duix.test.service.EdgeTtsService
 import ai.guiji.duix.test.service.HybridAsrService
 import ai.guiji.duix.test.service.LlmService
 import ai.guiji.duix.test.service.Mp3ToPcmConverter
+import ai.guiji.duix.test.service.PcmResampler
 import ai.guiji.duix.test.service.QwenTtsService
 import ai.guiji.duix.test.ui.MessageData
 import ai.guiji.duix.test.ui.adapter.MessageAdapter
@@ -1224,10 +1225,10 @@ class CallActivity : BaseActivity() {
             val localX = (screenX - location[0]) - ripple.width / 2
             val localY = (screenY - location[1]) - ripple.height / 2
             val lp = ripple.layoutParams as androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
-            lp.leftToLeft = androidx.constraintlayout.widget.ConstraintLayout.PARENT_ID
-            lp.topToTop = androidx.constraintlayout.widget.ConstraintLayout.PARENT_ID
-            lp.rightToRight = androidx.constraintlayout.widget.ConstraintLayout.PARENT_ID
-            lp.bottomToBottom = androidx.constraintlayout.widget.ConstraintLayout.PARENT_ID
+            lp.leftToLeft = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+            lp.topToTop = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+            lp.rightToRight = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+            lp.bottomToBottom = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
             lp.leftMargin = localX
             lp.topMargin = localY
             lp.rightMargin = 0
@@ -1640,7 +1641,7 @@ class CallActivity : BaseActivity() {
             val sysMsg = MessageData(
                 role = MessageData.Role.SYSTEM,
                 text = "新对话已开始",
-                timestamp = System.currentTimeMillis()
+                timestampMs = System.currentTimeMillis()
             )
             messageAdapter.append(sysMsg)
             // 5) 更新 UI

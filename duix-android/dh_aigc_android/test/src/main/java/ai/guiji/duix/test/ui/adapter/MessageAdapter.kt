@@ -132,7 +132,7 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
             llAiActions?.visibility = if (showRegen) View.VISIBLE else View.GONE
             if (showRegen) {
                 btnRegenerate?.setOnClickListener {
-                    val pos = bindingAdapterPosition
+                    val pos = adapterPosition
                     if (pos == RecyclerView.NO_POSITION) return@setOnClickListener
                     actionListener?.invoke(messages[pos], Action.REGENERATE)
                 }
@@ -141,7 +141,7 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
             }
             // [Phase 5.3 P0-3] 长按消息弹出 PopupMenu 操作菜单
             itemView.setOnLongClickListener { anchor ->
-                val pos = bindingAdapterPosition
+                val pos = adapterPosition
                 if (pos == RecyclerView.NO_POSITION) return@setOnLongClickListener false
                 val msg = messages[pos]
                 val popup = androidx.appcompat.widget.PopupMenu(anchor.context, anchor)
