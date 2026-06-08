@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Soft glow ring effect behind the mic button -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <gradient
+        android:type="radial"
+        android:gradientRadius="48dp"
+        android:startColor="#7C3AED"
+        android:endColor="@android:color/transparent" />
+</shape>

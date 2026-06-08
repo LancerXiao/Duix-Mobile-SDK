@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Animated pulse ring that scales up and fades out around the mic button -->
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+    <objectAnimator
+        android:propertyName="scaleX"
+        android:duration="800"
+        android:valueFrom="1.0"
+        android:valueTo="1.4"
+        android:repeatCount="infinite"
+        android:repeatMode="restart" />
+    <objectAnimator
+        android:propertyName="scaleY"
+        android:duration="800"
+        android:valueFrom="1.0"
+        android:valueTo="1.4"
+        android:repeatCount="infinite"
+        android:repeatMode="restart" />
+    <objectAnimator
+        android:propertyName="alpha"
+        android:duration="800"
+        android:valueFrom="1.0"
+        android:valueTo="0.0"
+        android:repeatCount="infinite"
+        android:repeatMode="restart" />
+</set>

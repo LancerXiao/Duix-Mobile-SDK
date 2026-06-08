@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Horizontal gradient line: transparent → violet → cyan → transparent -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="0"
+        android:startColor="@android:color/transparent"
+        android:centerColor="#7C3AED"
+        android:endColor="#06B6D4" />
+    <size
+        android:width="match_parent"
+        android:height="1dp" />
+</shape>
