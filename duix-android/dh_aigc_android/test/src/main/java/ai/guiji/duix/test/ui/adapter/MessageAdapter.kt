@@ -2,6 +2,7 @@ package ai.guiji.duix.test.ui.adapter
 
 import ai.guiji.duix.test.R
 import ai.guiji.duix.test.ui.MessageData
+import ai.guiji.duix.test.util.MarkdownRenderer
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -11,7 +12,7 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
 /**
- * 对话消息 RecyclerView 适配器（Phase 2.2 + UI 现代化）
+ * 对话消息 RecyclerView 适配器（Phase 2.2 + UI 现代化 + Phase 5.3 长按菜单）
  *
  * 简化设计：每条消息一个 item，通过 role 决定布局
  * - USER: 右对齐气泡
@@ -21,6 +22,13 @@ import androidx.recyclerview.widget.RecyclerView
 class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() {
 
     private val messages = mutableListOf<MessageData>()
+    private var actionListener: ((MessageData, Action) -> Unit)? = null
+
+    enum class Action { COPY, REGENERATE, LIKE, DISLIKE, SHARE }
+
+    fun setOnActionListener(listener: ((MessageData, Action) -> Unit)?) {
+        this.actionListener = listener
+    }
 
     fun submit(newMessages: List<MessageData>) {
         messages.clear()
@@ -47,6 +55,8 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
 
     fun snapshot(): List<MessageData> = messages.toList()
 
+    fun getMessage(position: Int): MessageData = messages[position]
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MessageViewHolder {
         val layoutId = when (viewType) {
             TYPE_USER -> R.layout.item_message_user
@@ -59,7 +69,6 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
 
     override fun onBindViewHolder(holder: MessageViewHolder, position: Int) {
         holder.bind(messages[position])
-        // 消息入场动画（豆包/Coze 风格：透明度 + 上滑）
         holder.itemView.startAnimation(
             AnimationUtils.loadAnimation(holder.itemView.context, R.anim.fade_in_up)
         )
@@ -75,7 +84,7 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
         }
     }
 
-    class MessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+    inner class MessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val tvText: TextView = itemView.findViewById(R.id.tvMessageText)
         private val tvThinking: View? = itemView.findViewById(R.id.tvThinking)
         private val dot1: View? = itemView.findViewById(R.id.dot1)
@@ -83,8 +92,7 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
         private val dot3: View? = itemView.findViewById(R.id.dot3)
 
         fun bind(message: MessageData) {
-            // [Phase 5.1 P0-2] AI 消息用 Markdown 渲染（粗体/斜体/代码块/标题）
-            // 用户消息保持原始（用户输入内容不应被改写）
+            // [Phase 5.1 P0-2] AI 消息用 Markdown 渲染
             if (message.role == MessageData.Role.AI) {
                 MarkdownRenderer.renderInto(tvText, message.text)
             } else {
@@ -95,23 +103,78 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
                 tvThinking.visibility = if (isThinking) View.VISIBLE else View.GONE
                 tvText.visibility = if (isThinking) View.GONE else View.VISIBLE
                 if (isThinking) {
-                    // 启动三圆点错相位动画（豆包/Coze 风格）
                     val ctx = itemView.context
                     val bounce = AnimationUtils.loadAnimation(ctx, R.anim.thinking_dot_bounce)
                     dot1?.startAnimation(applyOffset(bounce, 0L))
                     dot2?.startAnimation(applyOffset(bounce, 200L))
                     dot3?.startAnimation(applyOffset(bounce, 400L))
                 } else {
-                    // 停止动画防止内存/性能泄漏
                     dot1?.clearAnimation()
                     dot2?.clearAnimation()
                     dot3?.clearAnimation()
                 }
             }
+            // [Phase 5.3 P0-3] 长按消息弹出 PopupMenu 操作菜单
+            itemView.setOnLongClickListener { anchor ->
+                val pos = bindingAdapterPosition
+                if (pos == RecyclerView.NO_POSITION) return@setOnLongClickListener false
+                val msg = messages[pos]
+                val popup = androidx.appcompat.widget.PopupMenu(anchor.context, anchor)
+                popup.menuInflater.inflate(R.menu.menu_message_actions, popup.menu)
+                // 重新生成 / 点赞 / 点踩 只对 AI 消息显示
+                if (msg.role != MessageData.Role.AI) {
+                    popup.menu.findItem(R.id.action_regenerate)?.isVisible = false
+                    popup.menu.findItem(R.id.action_like)?.isVisible = false
+                    popup.menu.findItem(R.id.action_dislike)?.isVisible = false
+                }
+                popup.setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        R.id.action_copy -> {
+                            val cm = anchor.context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                                as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("DUIX message", msg.text))
+                            android.widget.Toast.makeText(
+                                anchor.context, "已复制", android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            true
+                        }
+                        R.id.action_regenerate -> {
+                            actionListener?.invoke(msg, Action.REGENERATE)
+                            true
+                        }
+                        R.id.action_like -> {
+                            actionListener?.invoke(msg, Action.LIKE)
+                            android.widget.Toast.makeText(
+                                anchor.context, "👍 感谢反馈", android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            true
+                        }
+                        R.id.action_dislike -> {
+                            actionListener?.invoke(msg, Action.DISLIKE)
+                            android.widget.Toast.makeText(
+                                anchor.context, "👎 感谢反馈", android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            true
+                        }
+                        R.id.action_share -> {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_TEXT, msg.text)
+                            }
+                            anchor.context.startActivity(
+                                android.content.Intent.createChooser(intent, "分享消息")
+                            )
+                            true
+                        }
+                        else -> false
+                    }
+                }
+                popup.show()
+                true
+            }
         }
 
         private fun applyOffset(src: Animation, offsetMs: Long): Animation {
-            // 通过重设 startTime 实现相位偏移（不能直接修改 Animation.startOffset）
             src.setStartTime(android.os.SystemClock.uptimeMillis() + offsetMs)
             return src
         }
