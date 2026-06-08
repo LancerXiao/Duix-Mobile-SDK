@@ -93,7 +93,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     // TTS引擎选择
     private enum class TtsEngine { QWEN_TTS, EDGE_TTS, ANDROID_TTS }
     private val ttsEngineCycle = listOf(TtsEngine.QWEN_TTS, TtsEngine.EDGE_TTS, TtsEngine.ANDROID_TTS)
-    private var currentTtsEngine = TtsEngine.EDGE_TTS
+    private var currentTtsEngine = TtsEngine.QWEN_TTS
     private var edgeTtsFailCount = 0
 
     // ASR 引擎选择 (Phase 1.2 骨架) - 顶部可见+可点击循环切换+持久化
@@ -2175,8 +2175,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     private fun loadTtsEnginePreference() {
         try {
             val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val name = prefs.getString(KEY_TTS_ENGINE, TtsEngine.EDGE_TTS.name)
-            val loaded = try { TtsEngine.valueOf(name!!) } catch (e: Exception) { TtsEngine.EDGE_TTS }
+            val name = prefs.getString(KEY_TTS_ENGINE, TtsEngine.QWEN_TTS.name)
+            val loaded = try { TtsEngine.valueOf(name!!) } catch (e: Exception) { TtsEngine.QWEN_TTS }
             if (loaded != currentTtsEngine) {
                 Log.i(TAG, "恢复 TTS 引擎偏好: $name")
                 currentTtsEngine = loaded

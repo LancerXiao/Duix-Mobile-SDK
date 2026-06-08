@@ -149,6 +149,10 @@ class QwenTtsService {
                         }
                         "response.done" -> {
                             Log.i(TAG, "TTS 响应完成")
+                            if (!shouldStop) {
+                                isSynthesizing.set(false)
+                                callback.onComplete()
+                            }
                         }
                         "error" -> {
                             val errObj = message.optJSONObject("error")
