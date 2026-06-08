@@ -4,6 +4,7 @@ import android.util.Log
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -11,19 +12,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 小米 MiMo TTS 服务 - 使用 mimo-v2.5-tts 语音合成
- * API 地址: https://token-plan-cn.xiaomimimo.com/v1/chat/completions
- *
- * 协议（OpenAI 兼容的 Chat Completions 格式）：
- *   请求：
- *     - POST /chat/completions
- *     - messages 中 assistant 角色放待合成文本
- *     - audio 对象指定格式和音色
- *   响应：
- *     - choices[0].message.audio.data 返回 Base64 编码的 PCM 音频
- *
- * 音色列表：
- *   - 白桦（默认）：中文男声，成熟大叔
- *   - 苏打：中文男声，阳光少年
+ * REST API, OpenAI 兼容格式
+ * 默认音色：白桦（中文男声，成熟大叔）
  */
 class MimoTtsService {
 
@@ -36,29 +26,23 @@ class MimoTtsService {
         private const val READ_TIMEOUT_S = 60L
     }
 
-    private val client = OkHttpClient.Builder()
+    private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(CONNECT_TIMEOUT_S, TimeUnit.SECONDS)
         .readTimeout(READ_TIMEOUT_S, TimeUnit.SECONDS)
         .writeTimeout(CONNECT_TIMEOUT_S, TimeUnit.SECONDS)
         .build()
 
     private val isSynthesizing = AtomicBoolean(false)
-    private var shouldStop = false  // 主动停止标志
-    private var currentCall: Call? = null  // 当前请求，用于取消
+    private var shouldStop = false
+    private var currentCall: Call? = null
 
     interface Callback {
-        fun onAudioData(pcmData: ByteArray)  // PCM 16-bit 数据
+        fun onAudioData(pcmData: ByteArray)
         fun onComplete()
         fun onError(error: String)
     }
 
-    /**
-     * 合成语音
-     * @param text 要合成的文本
-     * @param voice 音色，默认 白桦（中文男声，成熟大叔）
-     * @param callback 回调
-     */
-    fun synthesize(text: String, voice: String = AiConfig.MIMO_TTS_DEFAULT_VOICE, callback: Callback) {
+    fun synthesize(text: String, voice: String, callback: Callback) {
         if (text.isBlank()) {
             callback.onError("文本为空")
             return
@@ -75,26 +59,29 @@ class MimoTtsService {
 
         Log.i(TAG, "MiMo TTS 开始 (第${retryCount + 1}次): voice=$voice, text=${text.take(30)}...")
 
-        // 构建请求体
-        val requestBody = JSONObject().apply {
-            put("model", AiConfig.MIMO_TTS_MODEL)
-            put("messages", org.json.JSONArray().apply {
-                put(JSONObject().apply {
-                    put("role", "assistant")
-                    put("content", text)
-                })
-            })
-            put("audio", JSONObject().apply {
-                put("format", AUDIO_FORMAT)
-                put("voice", voice)
-            })
-        }
+        val messages = JSONArray()
+        val assistantMsg = JSONObject()
+        assistantMsg.put("role", "assistant")
+        assistantMsg.put("content", text)
+        messages.put(assistantMsg)
+
+        val audioConfig = JSONObject()
+        audioConfig.put("format", AUDIO_FORMAT)
+        audioConfig.put("voice", voice)
+
+        val requestBody = JSONObject()
+        requestBody.put("model", AiConfig.MIMO_TTS_MODEL)
+        requestBody.put("messages", messages)
+        requestBody.put("audio", audioConfig)
+
+        val body = requestBody.toString()
+            .toRequestBody("application/json".toMediaType())
 
         val request = Request.Builder()
             .url(AiConfig.MIMO_TTS_BASE_URL)
             .addHeader("Authorization", "Bearer ${AiConfig.MIMO_API_KEY}")
             .addHeader("Content-Type", "application/json")
-            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+            .post(body)
             .build()
 
         currentCall = client.newCall(request)
@@ -126,7 +113,6 @@ class MimoTtsService {
                         return
                     }
 
-                    // 解析响应
                     val json = JSONObject(responseBody)
                     val choices = json.optJSONArray("choices")
                     if (choices == null || choices.length() == 0) {
@@ -156,7 +142,6 @@ class MimoTtsService {
                         return
                     }
 
-                    // Base64 解码得到 PCM 数据
                     val pcmData = android.util.Base64.decode(audioDataB64, android.util.Base64.DEFAULT)
                     Log.i(TAG, "MiMo TTS 收到音频数据: ${pcmData.size} bytes")
 
@@ -178,9 +163,6 @@ class MimoTtsService {
         })
     }
 
-    /**
-     * 统一错误处理（带重试）
-     */
     private fun handleError(
         error: String,
         callback: Callback,
@@ -190,7 +172,6 @@ class MimoTtsService {
     ) {
         isSynthesizing.set(false)
         if (shouldStop) {
-            // 用户主动停止，不重试
             return
         }
         if (retryCount < MAX_RETRIES) {
@@ -204,9 +185,6 @@ class MimoTtsService {
         }
     }
 
-    /**
-     * 主动停止当前合成
-     */
     fun stop() {
         shouldStop = true
         isSynthesizing.set(false)
