@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [P2-C] 悬浮窗拖拽高亮环：长按时显示 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <stroke
+        android:width="3dp"
+        android:color="#CCFFFFFF" />
+    <solid android:color="#00000000" />
+</shape>

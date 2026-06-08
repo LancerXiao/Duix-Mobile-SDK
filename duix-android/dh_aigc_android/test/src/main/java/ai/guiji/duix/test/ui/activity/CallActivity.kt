@@ -255,6 +255,12 @@ class CallActivity : BaseActivity() {
             startNewChat()
         }
 
+        // [P2-C] 悬浮窗开关
+        binding.btnFloating.setOnClickListener {
+            performHapticFeedback()
+            toggleFloatingWindow()
+        }
+
         // 静音切换
         binding.btnMute.setOnClickListener {
             isMuted = true
@@ -1669,6 +1675,84 @@ class CallActivity : BaseActivity() {
                 val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
                 imm.hideSoftInputFromWindow(binding.etInput.windowToken, 0)
             } catch (e: Exception) { /* 静默 */ }
+        }
+    }
+
+    /**
+     * [P2-C] 切换悬浮窗状态
+     * - 没有 SYSTEM_ALERT_WINDOW 权限时弹引导对话框跳设置
+     * - 已经在运行：stopService
+     * - 未运行：startService（API 26+ 需用 startForegroundService）
+     */
+    private fun toggleFloatingWindow() {
+        try {
+            if (isFloatingWindowRunning()) {
+                Log.i(TAG, "[P2-C] 关闭悬浮窗")
+                stopService(android.content.Intent(this, ai.guiji.duix.test.service.FloatingWindowService::class.java))
+                showToast("已关闭悬浮窗")
+                return
+            }
+            // 权限检查
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                if (!android.provider.Settings.canDrawOverlays(this)) {
+                    Log.w(TAG, "[P2-C] 没有 SYSTEM_ALERT_WINDOW 权限，引导用户去开启")
+                    showOverlayPermissionGuide()
+                    return
+                }
+            }
+            // 启动
+            val intent = android.content.Intent(this, ai.guiji.duix.test.service.FloatingWindowService::class.java)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+            Log.i(TAG, "[P2-C] 已启动悬浮窗服务")
+            showToast("悬浮窗已开启")
+        } catch (e: Exception) {
+            Log.e(TAG, "[P2-C] toggleFloatingWindow 异常", e)
+            showToast("悬浮窗启动失败")
+        }
+    }
+
+    private fun isFloatingWindowRunning(): Boolean {
+        return ai.guiji.duix.test.service.FloatingWindowService::class.java.let { clazz ->
+            try {
+                val manager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+                @Suppress("DEPRECATION")
+                manager.getRunningServices(Int.MAX_VALUE).any { it.service.className == clazz.name }
+            } catch (e: Exception) {
+                Log.e(TAG, "isFloatingWindowRunning 检查失败", e)
+                false
+            }
+        }
+    }
+
+    /**
+     * [P2-C] 引导用户到设置开启"显示在其他应用上层"权限
+     */
+    private fun showOverlayPermissionGuide() {
+        try {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("需要悬浮窗权限")
+                .setMessage("数字人悬浮窗需要「显示在其他应用上层」权限。\n\n请在接下来的页面中找到 DUIX 并开启。")
+                .setPositiveButton("去开启") { _, _ ->
+                    try {
+                        val intent = android.content.Intent(
+                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            android.net.Uri.parse("package:$packageName")
+                        )
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "跳设置异常", e)
+                        showToast("无法打开设置，请手动到系统设置中开启")
+                    }
+                }
+                .setNegativeButton("取消", null)
+                .setCancelable(true)
+                .show()
+        } catch (e: Exception) {
+            Log.e(TAG, "showOverlayPermissionGuide 异常", e)
         }
     }
 

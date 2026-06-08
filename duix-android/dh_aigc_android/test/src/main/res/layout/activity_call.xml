@@ -96,6 +96,17 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             app:tint="@color/white" />
 
+        <!-- [P2-C] 悬浮窗开关：点击启动/关闭可拖拽悬浮窗 -->
+        <ImageView
+            android:id="@+id/btnFloating"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:src="@drawable/ic_floating_pin"
+            android:contentDescription="悬浮窗"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            app:tint="@color/white" />
+
         <!-- Title -->
         <TextView
             android:id="@+id/tvTitle"

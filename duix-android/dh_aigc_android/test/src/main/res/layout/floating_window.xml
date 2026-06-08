@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [P2-C] 可拖拽悬浮窗：80x80dp 圆形 + 关闭按钮 + 中心 mic 图标 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/floatingRoot"
+    android:layout_width="80dp"
+    android:layout_height="80dp"
+    android:background="@drawable/bg_floating_window">
+
+    <!-- 中心 mic 图标 -->
+    <ImageView
+        android:id="@+id/ivFloatingMic"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_gravity="center"
+        android:src="@drawable/ic_mic"
+        android:contentDescription="数字人悬浮窗"
+        app:tint="@color/white"
+        xmlns:app="http://schemas.android.com/apk/res-auto" />
+
+    <!-- 右上角关闭按钮 -->
+    <ImageView
+        android:id="@+id/ivFloatingClose"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="2dp"
+        android:padding="3dp"
+        android:src="@drawable/ic_close_white"
+        android:background="@drawable/bg_floating_close"
+        android:contentDescription="关闭悬浮窗" />
+
+    <!-- 拖拽提示环（长按时高亮） -->
+    <View
+        android:id="@+id/vFloatingDragRing"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/bg_floating_drag_ring"
+        android:visibility="gone" />
+
+</FrameLayout>

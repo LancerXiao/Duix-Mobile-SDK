@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [P2-C] 悬浮窗主体：圆形渐变蓝青背景，呼应主品牌色 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <gradient
+        android:type="radial"
+        android:startColor="#FF00D4FF"
+        android:centerColor="#FF6C63FF"
+        android:endColor="#FF1A1A2E"
+        android:gradientRadius="50dp" />
+    <stroke
+        android:width="1.5dp"
+        android:color="#88FFFFFF" />
+</shape>
