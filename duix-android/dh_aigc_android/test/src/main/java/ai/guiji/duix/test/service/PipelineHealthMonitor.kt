@@ -418,8 +418,9 @@ class PipelineHealthMonitor(private val host: HealthHost) {
         // LISTENING → THINKING, LISTENING → IDLE
         // THINKING → SPEAKING, THINKING → IDLE
         // SPEAKING → IDLE
-        // 任何 → IDLE 都是合法的（超时恢复）
+        // 任何 → IDLE 都是合法的（超时恢复/取消）
         if (to == PipelineSelfTest.CallState.IDLE) return false
+        if (from == to) return false
 
         return when (from) {
             PipelineSelfTest.CallState.IDLE -> {

@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 状态药丸：半透明磨砂 + 圆角 -->
+<!-- 状态药丸：半透明磨砂 + 品牌色微光边框 + 圆角 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#66000000" />
-    <corners android:radius="10dp" />
+    <solid android:color="#660F1523" />
+    <stroke
+        android:width="0.5dp"
+        android:color="#2200D4FF" />
+    <corners android:radius="12dp" />
 </shape>

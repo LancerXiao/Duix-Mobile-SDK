@@ -133,13 +133,48 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     private var stateEnterTimeMs = 0L
 
     // [E2E自测] 状态变更通知：所有 currentState 赋值必须通过此方法
+    // 自动修正非法状态转换：如 IDLE→SPEAKING 自动插入 THINKING
     private fun setState(newState: State) {
         val oldState = currentState
         if (oldState == newState) return
+
+        // 自动修正非法状态转换
+        if (isIllegalTransition(oldState, newState)) {
+            Log.w(TAG, "[STATE] 检测到非法转换 $oldState → $newState，自动修正")
+            when {
+                // IDLE→SPEAKING：插入 THINKING 中间态
+                oldState == State.IDLE && newState == State.SPEAKING -> {
+                    currentState = State.THINKING
+                    stateEnterTimeMs = System.currentTimeMillis()
+                    Log.d(TAG, "[STATE] 自动修正: $oldState -> THINKING -> $newState")
+                    val testThinking = PipelineSelfTest.CallState.THINKING
+                    stateListeners.forEach { it(testThinking) }
+                    healthMonitor?.onStateChanged(testThinking)
+                }
+                // SPEAKING→LISTENING：插入 IDLE 中间态
+                oldState == State.SPEAKING && newState == State.LISTENING -> {
+                    currentState = State.IDLE
+                    stateEnterTimeMs = System.currentTimeMillis()
+                    Log.d(TAG, "[STATE] 自动修正: $oldState -> IDLE -> $newState")
+                    val testIdle = PipelineSelfTest.CallState.IDLE
+                    stateListeners.forEach { it(testIdle) }
+                    healthMonitor?.onStateChanged(testIdle)
+                }
+                // 其他非法转换：先回 IDLE
+                else -> {
+                    currentState = State.IDLE
+                    stateEnterTimeMs = System.currentTimeMillis()
+                    Log.d(TAG, "[STATE] 自动修正: $oldState -> IDLE -> $newState")
+                    val testIdle = PipelineSelfTest.CallState.IDLE
+                    stateListeners.forEach { it(testIdle) }
+                    healthMonitor?.onStateChanged(testIdle)
+                }
+            }
+        }
+
         currentState = newState
         stateEnterTimeMs = System.currentTimeMillis()
-        Log.d(TAG, "[STATE] $oldState -> $newState")
-        // 通知自测引擎状态变化
+        Log.d(TAG, "[STATE] ${if (isIllegalTransition(oldState, newState)) "(修正后) " else ""}$oldState -> $newState")
         val testState = when (newState) {
             State.IDLE -> PipelineSelfTest.CallState.IDLE
             State.LISTENING -> PipelineSelfTest.CallState.LISTENING
@@ -147,8 +182,19 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             State.SPEAKING -> PipelineSelfTest.CallState.SPEAKING
         }
         stateListeners.forEach { it(testState) }
-        // 通知健康监控
         healthMonitor?.onStateChanged(testState)
+    }
+
+    /** 检查状态转换是否合法 */
+    private fun isIllegalTransition(from: State, to: State): Boolean {
+        if (to == State.IDLE) return false  // 任何→IDLE 都合法
+        if (from == to) return false
+        return when (from) {
+            State.IDLE -> to != State.LISTENING && to != State.THINKING
+            State.LISTENING -> to != State.THINKING && to != State.IDLE
+            State.THINKING -> to != State.SPEAKING && to != State.IDLE
+            State.SPEAKING -> to != State.IDLE
+        }
     }
     // 用户主动停止 ASR 的标记位，防止停止后迟到的 ASR 回调改变状态
     private var userStoppedAsr = false
@@ -494,13 +540,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_START -> {
                     runOnUiThread {
                         Log.i(TAG, "AUDIO_PLAY_START: 数字人开始播放音频")
-                        // 只在非 SPEAKING 状态时切换，避免重复设置和非法状态转换
-                        if (currentState != State.SPEAKING) {
-                            if (currentState == State.IDLE) {
-                                setState(State.THINKING)
-                            }
-                            setState(State.SPEAKING)
-                        }
+                        // setState 会自动修正非法转换（如 IDLE→SPEAKING 自动插入 THINKING）
+                        setState(State.SPEAKING)
                         updateUI()
                     }
                 }
@@ -572,15 +613,12 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     private fun playGreeting() {
         if (currentState != State.IDLE) return
         val greeting = "你好呀，我是你的智能伙伴。有什么想聊的，或者按住下方麦克风直接说话就行～"
-        // 1) 添加 AI 消息到历史（不显示 user 消息，模拟数字人主动开口）
         messageAdapter.append(MessageData(MessageData.Role.AI, greeting))
         scrollMessagesToBottom()
-        // 2) 状态切换：IDLE → THINKING → SPEAKING（避免非法状态转换 IDLE→SPEAKING）
-        setState(State.THINKING)
+        // setState 会自动修正 IDLE→SPEAKING 为 IDLE→THINKING→SPEAKING
         setState(State.SPEAKING)
         updateStatus("打招呼中")
         updateUI()
-        // 3) TTS 合成 + 播放
         synthesizeAndPlay(greeting)
     }
 
@@ -992,15 +1030,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
      * 优先使用 Edge TTS，失败时自动切换到 Android 原生 TTS
      */
     private fun synthesizeAndPlay(text: String) {
-        // 只在非 SPEAKING 状态时才切换，避免重复设置和非法状态转换
-        if (currentState != State.SPEAKING) {
-            // 如果当前是 THINKING，THINKING→SPEAKING 是合法的
-            // 如果当前是 IDLE（不应该发生），先走 THINKING 再走 SPEAKING
-            if (currentState == State.IDLE) {
-                setState(State.THINKING)
-            }
-            setState(State.SPEAKING)
-        }
+        // setState 会自动修正非法转换（如 IDLE→SPEAKING 自动插入 THINKING）
+        setState(State.SPEAKING)
         updateUI()
         // [Bug fix] 启动 SPEAKING 超时保护
         scheduleSpeakingTimeout()
@@ -1096,11 +1127,11 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 override fun onError(error: String) {
                     Log.e(TAG, "Qwen TTS 错误: $error, fallback 到 Edge TTS")
                     runOnUiThread {
-                        cancelSpeakingTimeout() // 取消当前超时，重新开始
+                        cancelSpeakingTimeout()
                         currentTtsEngine = TtsEngine.EDGE_TTS
+                        saveTtsEnginePreference(TtsEngine.EDGE_TTS)  // 保存 fallback 引擎
                         showErrorBanner("Qwen TTS 失败，切换到 Edge TTS", 3000)
                         updateUI()
-                        // 重新启动 SPEAKING 超时
                         scheduleSpeakingTimeout()
                         synthesizeWithEdgeTts(text, currentDuix)
                     }
@@ -1180,6 +1211,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                                         Log.i(TAG, "MP3转换失败，切换到Android TTS")
                                         updateStatus("切换语音引擎")
                                         currentTtsEngine = TtsEngine.ANDROID_TTS
+                                        saveTtsEnginePreference(TtsEngine.ANDROID_TTS)
                                         updateUI()
                                         synthesizeWithAndroidTts(text, currentDuix)
                                     }
@@ -1205,13 +1237,13 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     Log.e(TAG, "Edge TTS 合成失败: $error")
                     edgeTtsFailCount++
                     runOnUiThread {
-                        cancelSpeakingTimeout() // 取消当前超时，重新开始
+                        cancelSpeakingTimeout()
                         if (edgeTtsFailCount >= 2) {
                             Log.i(TAG, "Edge TTS 连续失败 $edgeTtsFailCount 次，切换到Android TTS")
                             currentTtsEngine = TtsEngine.ANDROID_TTS
+                            saveTtsEnginePreference(TtsEngine.ANDROID_TTS)  // 保存 fallback 引擎
                             updateUI()
                         }
-                        // 重新启动 SPEAKING 超时
                         scheduleSpeakingTimeout()
                         synthesizeWithAndroidTts(text, currentDuix)
                     }
@@ -1661,10 +1693,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     }
 
     /**
-     * 滚动消息列表到底部（Phase 2.2 + UI-6 微动效）
-     * 延迟 80ms 确保 RecyclerView 已经完成 item 插入布局
-     * 否则 smoothScrollToPosition 可能滚动到错误位置
+     * 滚动消息列表到底部
+     * 延迟 150ms 确保 RecyclerView 已经完成 item 插入布局
      * 增加防抖：避免 LLM token 流式回调时疯狂滚动
+     * 使用 scrollToPosition 替代 smoothScrollToPosition：瞬间跳转避免动画冲突
      */
     private var scrollJob: Runnable? = null
     private fun scrollMessagesToBottom() {
@@ -1674,7 +1706,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             try {
                 val count = messageAdapter.itemCount
                 if (count > 0) {
-                    binding.messagesList.smoothScrollToPosition(count - 1)
+                    binding.messagesList.scrollToPosition(count - 1)
                 }
             } catch (e: Exception) {
                 // 静默吞掉
