@@ -450,9 +450,31 @@ class CallActivity : BaseActivity() {
             loadMicInteractionMode()
             // 清空 fallback 状态显示 (Phase 1.3 骨架)
             clearFallbackStatus()
+            // [Phase 4.2 P1-2] 数字人主动开场白（800ms 延迟让 UI 先稳定）
+            mainHandler.postDelayed({ playGreeting() }, 800L)
             // 初始化完成后自动开始监听，参考 Call Annie 即时响应设计
             scheduleAutoListen()
         }
+    }
+
+    /**
+     * [Phase 4.2 P1-2] 数字人主动开场白
+     * 不消耗 LLM token（避免冷启动时双重 LLM 调用）
+     * 直接 TTS 播放预设欢迎语 + 显示 AI 气泡
+     * 让用户感受到"数字人在主动打招呼"
+     */
+    private fun playGreeting() {
+        if (currentState != State.IDLE) return
+        val greeting = "你好呀，我是你的智能伙伴。有什么想聊的，或者按住下方麦克风直接说话就行～"
+        // 1) 添加 AI 消息到历史（不显示 user 消息，模拟数字人主动开口）
+        messageAdapter.append(MessageData(MessageData.Role.AI, greeting))
+        scrollMessagesToBottom()
+        // 2) 状态切换到 SPEAKING
+        currentState = State.SPEAKING
+        updateStatus("打招呼中")
+        updateUI()
+        // 3) TTS 合成 + 播放
+        synthesizeAndPlay(greeting)
     }
 
     // --- Loading 覆盖层 ---
