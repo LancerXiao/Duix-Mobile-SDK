@@ -61,4 +61,26 @@
             android:background="@drawable/dot_thinking" />
 
     </LinearLayout>
+
+    <!-- [Phase 5.4 P1-3] 操作按钮行：仅最新 AI 消息显示 -->
+    <LinearLayout
+        android:id="@+id/llAiActions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="4dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/btnRegenerate"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:padding="4dp"
+            android:background="@drawable/selector_regenerate_ripple"
+            android:src="@drawable/ic_regenerate"
+            android:contentDescription="重新生成"
+            app:tint="@color/white"
+            xmlns:app="http://schemas.android.com/apk/res-auto" />
+
+    </LinearLayout>
 </LinearLayout>

@@ -53,6 +53,14 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
         notifyDataSetChanged()
     }
 
+    /** [Phase 5.4 P1-3] 移除指定位置的消息（重新生成时删除最后一条 AI 消息） */
+    fun removeAt(position: Int) {
+        if (position in messages.indices) {
+            messages.removeAt(position)
+            notifyItemRemoved(position)
+        }
+    }
+
     fun snapshot(): List<MessageData> = messages.toList()
 
     fun getMessage(position: Int): MessageData = messages[position]
@@ -68,7 +76,10 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
     }
 
     override fun onBindViewHolder(holder: MessageViewHolder, position: Int) {
-        holder.bind(messages[position])
+        // [Phase 5.4 P1-3] 仅最后一条 AI 消息显示重新生成按钮行
+        val lastAiIndex = messages.indexOfLast { it.role == MessageData.Role.AI && !it.isThinking }
+        val isLastAi = (position == lastAiIndex)
+        holder.bind(messages[position], isLastAi)
         holder.itemView.startAnimation(
             AnimationUtils.loadAnimation(holder.itemView.context, R.anim.fade_in_up)
         )
@@ -90,8 +101,10 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
         private val dot1: View? = itemView.findViewById(R.id.dot1)
         private val dot2: View? = itemView.findViewById(R.id.dot2)
         private val dot3: View? = itemView.findViewById(R.id.dot3)
+        private val llAiActions: View? = itemView.findViewById(R.id.llAiActions)
+        private val btnRegenerate: View? = itemView.findViewById(R.id.btnRegenerate)
 
-        fun bind(message: MessageData) {
+        fun bind(message: MessageData, isLastAi: Boolean = false) {
             // [Phase 5.1 P0-2] AI 消息用 Markdown 渲染
             if (message.role == MessageData.Role.AI) {
                 MarkdownRenderer.renderInto(tvText, message.text)
@@ -113,6 +126,18 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
                     dot2?.clearAnimation()
                     dot3?.clearAnimation()
                 }
+            }
+            // [Phase 5.4 P1-3] 重新生成按钮行：仅最后一条 AI 消息（且非思考中）显示
+            val showRegen = isLastAi && message.role == MessageData.Role.AI && !message.isThinking
+            llAiActions?.visibility = if (showRegen) View.VISIBLE else View.GONE
+            if (showRegen) {
+                btnRegenerate?.setOnClickListener {
+                    val pos = bindingAdapterPosition
+                    if (pos == RecyclerView.NO_POSITION) return@setOnClickListener
+                    actionListener?.invoke(messages[pos], Action.REGENERATE)
+                }
+            } else {
+                btnRegenerate?.setOnClickListener(null)
             }
             // [Phase 5.3 P0-3] 长按消息弹出 PopupMenu 操作菜单
             itemView.setOnLongClickListener { anchor ->

@@ -234,6 +234,15 @@ class CallActivity : BaseActivity() {
             }
             adapter = messageAdapter
         }
+        // [Phase 5.3/5.4] 消息长按菜单 + 重新生成按钮回调
+        messageAdapter.setOnActionListener { msg, action ->
+            when (action) {
+                MessageAdapter.Action.REGENERATE -> regenerateLastAi()
+                MessageAdapter.Action.LIKE -> { /* 反馈已 Toast */ }
+                MessageAdapter.Action.DISLIKE -> { /* 反馈已 Toast */ }
+                MessageAdapter.Action.COPY, MessageAdapter.Action.SHARE -> { /* Adapter 内部已处理 */ }
+            }
+        }
 
         // 返回按钮
         binding.btnBack.setOnClickListener {
@@ -798,13 +807,22 @@ class CallActivity : BaseActivity() {
             return
         }
 
-        currentState = State.THINKING
-        updateStatus("思考中")
-        updateUI()
-
         // [Phase 2.2] 添加用户消息到历史
         messageAdapter.append(MessageData(MessageData.Role.USER, text))
         scrollMessagesToBottom()
+
+        // 走 LLM 调用链（不再自己 append USER，由 invokeLlm 接管）
+        invokeLlm(text)
+    }
+
+    /**
+     * [Phase 5.4 P1-3] 调起 LLM 链路（不 append USER 消息）
+     * sendToLlm 和 regenerateLastAi 共用此核心调用
+     */
+    private fun invokeLlm(text: String) {
+        currentState = State.THINKING
+        updateStatus("思考中")
+        updateUI()
 
         showAiBubble(thinking = true, text = "")
 
@@ -1561,6 +1579,53 @@ class CallActivity : BaseActivity() {
                 val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
                 imm.hideSoftInputFromWindow(binding.etInput.windowToken, 0)
             } catch (e: Exception) { /* 静默 */ }
+        }
+    }
+
+    /**
+     * [Phase 5.4 P1-3] 重新生成最后一条 AI 回复
+     * - 找到最近一条 USER 消息
+     * - 删掉最后一条 AI 消息（UI）
+     * - 重新走 invokeLlm(userText) 触发新一轮 LLM（不重复 append USER）
+     * 让"重新生成"行为符合用户对聊天类 App 的预期
+     */
+    private fun regenerateLastAi() {
+        try {
+            val snapshot = messageAdapter.snapshot()
+            if (snapshot.isEmpty()) {
+                showToast("没有可重新生成的内容")
+                return
+            }
+            // 1) 找最近的 USER 文本
+            val lastUserIndex = snapshot.indexOfLast { it.role == MessageData.Role.USER && it.text.isNotBlank() }
+            if (lastUserIndex < 0) {
+                showToast("没有用户消息可重新生成")
+                return
+            }
+            val userText = snapshot[lastUserIndex].text
+            // 2) 状态检查
+            if (currentState == State.THINKING || currentState == State.SPEAKING) {
+                showToast("正在处理中，请稍候")
+                return
+            }
+            // 3) 删掉最后一条 AI 消息（重新生成）
+            val lastAiIndex = snapshot.indexOfLast { it.role == MessageData.Role.AI && !it.isThinking }
+            if (lastAiIndex >= 0) {
+                messageAdapter.removeAt(lastAiIndex)
+            }
+            // 4) 网络检查
+            if (!isNetworkAvailable()) {
+                showErrorBanner("网络不可用，请检查网络连接", 4000)
+                return
+            }
+            // 5) 触觉反馈
+            performHapticFeedback()
+            // 6) 重新走 invokeLlm（USER 消息保留在历史中，AI 消息已被删除）
+            invokeLlm(userText)
+            Log.i(TAG, "[DIAG] regenerateLastAi 完成: userText='${userText.take(30)}...'")
+        } catch (e: Exception) {
+            Log.e(TAG, "[DIAG] regenerateLastAi 异常", e)
+            showToast("重新生成失败")
         }
     }
 
