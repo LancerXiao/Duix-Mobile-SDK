@@ -20,15 +20,15 @@
 
     <!-- Backgrounds -->
     <color name="bg_main">#06060F</color>
-    <color name="bg_card">#0C0C1D</color>
-    <color name="bg_card_selected">#1A1A3E</color>
+    <color name="bg_card">#12122A</color>
+    <color name="bg_card_selected">#1E1E4A</color>
     <color name="bg_header_gradient_start">#7C3AED</color>
     <color name="bg_header_gradient_end">#06B6D4</color>
 
-    <!-- Text -->
-    <color name="text_primary">#1A1A2E</color>
-    <color name="text_secondary">#6B7280</color>
-    <color name="text_hint">#9CA3AF</color>
+    <!-- Text - 适配深色背景 -->
+    <color name="text_primary">#F1F1F6</color>
+    <color name="text_secondary">#9CA3AF</color>
+    <color name="text_hint">#6B7280</color>
     <color name="text_on_primary">#FFFFFF</color>
 
     <!-- Status -->
@@ -36,8 +36,8 @@
     <color name="status_not_downloaded">#E5E7EB</color>
     <color name="status_error">#EF4444</color>
 
-    <!-- Divider / Border -->
-    <color name="divider">#E5E7EB</color>
+    <!-- Divider / Border - 适配深色背景 -->
+    <color name="divider">#2A2A4A</color>
     <color name="card_shadow">#1A000000</color>
 
     <!-- Glow effects -->

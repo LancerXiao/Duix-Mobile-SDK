@@ -94,10 +94,15 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
             val message = messages[position]
             val tvText: TextView = holder.itemView.findViewById(R.id.tvMessageText)
             val tvThinking: View? = holder.itemView.findViewById(R.id.tvThinking)
-            if (message.role == MessageData.Role.AI) {
-                MarkdownRenderer.renderInto(tvText, message.text)
+            // 防止重复设置相同文本导致闪烁
+            val newText = if (message.role == MessageData.Role.AI) {
+                MarkdownRenderer.render(message.text)
             } else {
-                tvText.text = message.text
+                message.text
+            }
+            // 只在文本实际变化时才更新，避免不必要的重绘
+            if (tvText.text.toString() != newText.toString()) {
+                tvText.text = newText
             }
             // 思考中 → 非思考中 切换
             if (tvThinking != null) {

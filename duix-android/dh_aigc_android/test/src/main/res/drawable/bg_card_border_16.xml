@@ -1,6 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <corners android:radius="16dp" />
-    <solid android:color="@color/bg_card" />
-    <stroke android:width="1dp" android:color="@color/divider" />
-</shape>
+<!-- Model card: dark glass with subtle violet glow border -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Outer glow -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="16dp" />
+            <solid android:color="#0D0D20" />
+            <stroke android:width="1dp" android:color="#337C3AED" />
+        </shape>
+    </item>
+    <!-- Inner fill -->
+    <item
+        android:top="1dp"
+        android:bottom="1dp"
+        android:left="1dp"
+        android:right="1dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="15dp" />
+            <solid android:color="@color/bg_card" />
+        </shape>
+    </item>
+</layer-list>

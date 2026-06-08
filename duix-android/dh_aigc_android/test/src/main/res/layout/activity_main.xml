@@ -116,11 +116,11 @@
                 android:clickable="true"
                 android:focusable="true">
 
-                <!-- Model avatar/icon placeholder -->
+                <!-- Model avatar with gradient background -->
                 <LinearLayout
                     android:layout_width="48dp"
                     android:layout_height="48dp"
-                    android:background="@drawable/bg_chip_selected"
+                    android:background="@drawable/bg_brand_gradient"
                     android:gravity="center"
                     android:layout_marginEnd="14dp">
 
@@ -129,7 +129,7 @@
                         android:layout_height="wrap_content"
                         android:text="小"
                         android:textSize="20sp"
-                        android:textColor="@color/primary"
+                        android:textColor="@color/text_on_primary"
                         android:textStyle="bold" />
                 </LinearLayout>
 
@@ -166,7 +166,7 @@
                     android:layout_height="32dp"
                     android:minWidth="72dp"
                     android:background="@drawable/bg_btn_download"
-                    android:text="下载"
+                    android:text="Download"
                     android:textColor="@color/text_on_primary"
                     android:textSize="13sp"
                     android:textStyle="bold"
@@ -183,7 +183,7 @@
                     android:layout_height="24dp"
                     android:layout_marginStart="8dp"
                     android:src="@drawable/ic_checkmark"
-                    android:contentDescription="已选中"
+                    android:contentDescription="Selected"
                     android:visibility="gone" />
             </LinearLayout>
 
@@ -200,11 +200,11 @@
                 android:clickable="true"
                 android:focusable="true">
 
-                <!-- Model avatar/icon placeholder -->
+                <!-- Model avatar with gradient background -->
                 <LinearLayout
                     android:layout_width="48dp"
                     android:layout_height="48dp"
-                    android:background="@drawable/bg_chip_selected"
+                    android:background="@drawable/bg_brand_gradient"
                     android:gravity="center"
                     android:layout_marginEnd="14dp">
 
@@ -213,7 +213,7 @@
                         android:layout_height="wrap_content"
                         android:text="艾"
                         android:textSize="20sp"
-                        android:textColor="@color/primary"
+                        android:textColor="@color/text_on_primary"
                         android:textStyle="bold" />
                 </LinearLayout>
 
@@ -250,7 +250,7 @@
                     android:layout_height="32dp"
                     android:minWidth="72dp"
                     android:background="@drawable/bg_btn_download"
-                    android:text="下载"
+                    android:text="Download"
                     android:textColor="@color/text_on_primary"
                     android:textSize="13sp"
                     android:textStyle="bold"
@@ -267,7 +267,7 @@
                     android:layout_height="24dp"
                     android:layout_marginStart="8dp"
                     android:src="@drawable/ic_checkmark"
-                    android:contentDescription="已选中"
+                    android:contentDescription="Selected"
                     android:visibility="gone" />
             </LinearLayout>
 
@@ -315,7 +315,7 @@
             android:id="@+id/tvUpdateHint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="发现新版本，点击更新"
+            android:text="New version available, tap to update"
             android:textSize="12sp"
             android:textColor="@color/accent"
             android:gravity="center"

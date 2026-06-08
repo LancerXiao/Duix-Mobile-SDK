@@ -385,6 +385,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 stackFromEnd = true  // 最新的消息在底部
             }
             adapter = messageAdapter
+            // 禁用 item 变更动画，防止流式更新时字幕闪动
+            // 主流 App（豆包、千问）都禁用了 RecyclerView 的默认动画
+            (itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)?.supportsChangeAnimations = false
+            itemAnimator = null  // 完全禁用动画，确保流式更新无闪烁
         }
         // [Phase 5.3/5.4] 消息长按菜单 + 重新生成按钮回调
         messageAdapter.setOnActionListener { msg, action ->

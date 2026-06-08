@@ -1,21 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Toolbar: frosted glass + bottom gradient glow line -->
+<!-- Toolbar: frosted glass with violet-cyan gradient glow -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 半透明深色底 + 微紫色调 -->
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#CC0A0A1A" />
+            <solid android:color="#B30F0A1E" />
         </shape>
     </item>
+    <!-- 底部渐变发光线：紫罗兰 → 青色 -->
     <item
         android:gravity="bottom">
         <shape android:shape="rectangle">
-            <size android:height="2dp" />
+            <size android:height="1.5dp" />
             <gradient
                 android:type="linear"
                 android:angle="0"
-                android:startColor="#007C3AED"
-                android:centerColor="#667C3AED"
-                android:endColor="#0006B6D4" />
+                android:startColor="#337C3AED"
+                android:centerColor="#AA7C3AED"
+                android:endColor="#3306B6D4" />
         </shape>
     </item>
 </layer-list>
