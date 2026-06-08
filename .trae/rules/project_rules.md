@@ -30,3 +30,11 @@
 - APK 部署到阿里云 ECS: `http://114.215.183.45/downloads/duix/`
 - 下载页面: `https://www.enlyai.com/downloads/duix/`
 - version.json 供应用内更新检查使用
+
+## CI/CD 构建部署
+
+- **push 到 main 分支会自动触发 CI 构建**（trigger=push），无需手动 `workflow_dispatch`
+- **禁止在 push 后再手动触发 `workflow_dispatch`**，否则会导致同一 commit 构建两次，第二次可能因资源冲突失败
+- 只有在需要重新构建但不想 push 新 commit 时（如 CI 网络超时失败），才使用 `workflow_dispatch`
+- **在通知用户测试之前，必须确认 CI 构建已成功完成（conclusion=success）且 APK 已部署到服务器**
+- 确认方法：通过 GitHub API 检查最新 workflow run 的 status 和 conclusion，以及服务器 APK 的 Last-Modified 时间
