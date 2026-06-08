@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 引擎选择 chip：未选中状态 -->
+<!-- Engine chip selector -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 选中状态：蓝青品牌色 -->
+    <!-- Selected: violet brand color -->
     <item android:state_activated="true">
         <shape android:shape="rectangle">
-            <solid android:color="#3300D4FF" />
-            <stroke android:width="1dp" android:color="#00D4FF" />
-            <corners android:radius="10dp" />
+            <solid android:color="#337C3AED" />
+            <stroke android:width="1dp" android:color="#7C3AED" />
+            <corners android:radius="12dp" />
         </shape>
     </item>
-    <!-- 未选中状态：半透明深色 -->
+    <!-- Unselected: semi-transparent dark -->
     <item>
         <shape android:shape="rectangle">
             <solid android:color="#1AFFFFFF" />
             <stroke android:width="0.5dp" android:color="#22FFFFFF" />
-            <corners android:radius="10dp" />
+            <corners android:radius="12dp" />
         </shape>
     </item>
 </selector>

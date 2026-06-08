@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 发送按钮：蓝青品牌色渐变 + 圆形 -->
+<!-- Send button: violet-cyan gradient oval -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
     <gradient
         android:type="linear"
         android:angle="135"
-        android:startColor="#00D4FF"
-        android:endColor="#0099CC" />
+        android:startColor="#7C3AED"
+        android:endColor="#06B6D4" />
 </shape>

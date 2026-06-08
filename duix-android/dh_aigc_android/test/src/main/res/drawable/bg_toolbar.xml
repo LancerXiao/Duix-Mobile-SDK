@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 工具栏：毛玻璃深蓝青色 + 底部品牌色微光分隔线 -->
+<!-- Toolbar: frosted glass dark + bottom gradient glow line -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#CC0F1523" />
+            <solid android:color="#CC0A0A1A" />
         </shape>
     </item>
     <item
         android:gravity="bottom">
         <shape android:shape="rectangle">
-            <size android:height="1dp" />
+            <size android:height="1.5dp" />
             <gradient
                 android:type="linear"
                 android:angle="0"
-                android:startColor="#0000D4FF"
-                android:centerColor="#4400D4FF"
-                android:endColor="#0000D4FF" />
+                android:startColor="#007C3AED"
+                android:centerColor="#557C3AED"
+                android:endColor="#007C3AED" />
         </shape>
     </item>
 </layer-list>

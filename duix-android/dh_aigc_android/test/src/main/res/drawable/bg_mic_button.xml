@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 麦克风按钮：蓝青品牌色径向渐变 -->
+<!-- Mic button: violet-cyan gradient oval -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 外圈阴影层 -->
+    <!-- Shadow ring -->
     <item>
         <shape android:shape="oval">
             <solid android:color="#33000000" />
         </shape>
     </item>
-    <!-- 主体品牌渐变 -->
+    <!-- Main gradient -->
     <item
         android:left="1dp"
         android:right="1dp"
@@ -15,10 +15,10 @@
         android:bottom="2dp">
         <shape android:shape="oval">
             <gradient
-                android:type="radial"
-                android:gradientRadius="60"
-                android:startColor="#FF00D4FF"
-                android:endColor="#FF0099CC" />
+                android:type="linear"
+                android:angle="135"
+                android:startColor="#7C3AED"
+                android:endColor="#06B6D4" />
         </shape>
     </item>
 </layer-list>

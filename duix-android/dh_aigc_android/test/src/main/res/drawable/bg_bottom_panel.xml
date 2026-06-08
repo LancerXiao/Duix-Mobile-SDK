@@ -1,35 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 底部面板：渐变深色 + 顶部 28dp 圆角 + 品牌色微光顶部边框 -->
+<!-- Bottom panel: gradient dark + 32dp top corners + glow top border -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 主体渐变 -->
+    <!-- Main gradient -->
     <item>
         <shape android:shape="rectangle">
             <gradient
                 android:type="linear"
                 android:angle="90"
-                android:startColor="#E60F1523"
-                android:endColor="#F20A0E1A" />
+                android:startColor="#E60A0A1A"
+                android:endColor="#F206060F" />
             <corners
-                android:topLeftRadius="28dp"
-                android:topRightRadius="28dp"
+                android:topLeftRadius="32dp"
+                android:topRightRadius="32dp"
                 android:bottomLeftRadius="0dp"
                 android:bottomRightRadius="0dp" />
         </shape>
     </item>
-    <!-- 顶部品牌色微光边框 -->
+    <!-- Top glow border -->
     <item
         android:gravity="top">
         <shape android:shape="rectangle">
-            <size android:height="1dp" />
+            <size android:height="1.5dp" />
             <gradient
                 android:type="linear"
                 android:angle="0"
-                android:startColor="#0000D4FF"
-                android:centerColor="#5500D4FF"
-                android:endColor="#0000D4FF" />
+                android:startColor="#007C3AED"
+                android:centerColor="#667C3AED"
+                android:endColor="#007C3AED" />
             <corners
-                android:topLeftRadius="28dp"
-                android:topRightRadius="28dp" />
+                android:topLeftRadius="32dp"
+                android:topRightRadius="32dp" />
         </shape>
     </item>
 </layer-list>

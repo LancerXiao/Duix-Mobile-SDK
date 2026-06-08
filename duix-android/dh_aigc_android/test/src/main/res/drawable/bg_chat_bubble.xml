@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- AI 消息气泡：磨砂半透深色 + 16dp 圆角 + 品牌色微光边框 -->
+<!-- AI message bubble: frosted dark + 18dp corners + glow border -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="#B31A1A2E" />
     <stroke
         android:width="0.5dp"
-        android:color="#3300D4FF" />
+        android:color="#337C3AED" />
     <corners
-        android:topLeftRadius="16dp"
-        android:topRightRadius="16dp"
+        android:topLeftRadius="18dp"
+        android:topRightRadius="18dp"
         android:bottomLeftRadius="4dp"
-        android:bottomRightRadius="16dp" />
+        android:bottomRightRadius="18dp" />
 </shape>

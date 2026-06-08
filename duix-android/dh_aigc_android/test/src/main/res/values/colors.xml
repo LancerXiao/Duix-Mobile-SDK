@@ -8,22 +8,22 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 
-    <!-- Modern primary palette - 蓝青品牌色 -->
-    <color name="primary">#00D4FF</color>
-    <color name="primary_dark">#0099CC</color>
-    <color name="primary_light">#33D6FF</color>
-    <color name="primary_99">#9900D4FF</color>
+    <!-- Modern primary palette - Electric violet-blue tech palette -->
+    <color name="primary">#7C3AED</color>
+    <color name="primary_dark">#5B21B6</color>
+    <color name="primary_light">#A78BFA</color>
+    <color name="primary_99">#997C3AED</color>
 
-    <!-- Accent -->
-    <color name="accent">#00D4FF</color>
-    <color name="accent_light">#33D6FF</color>
+    <!-- Accent - Electric cyan -->
+    <color name="accent">#06B6D4</color>
+    <color name="accent_light">#22D3EE</color>
 
     <!-- Backgrounds -->
-    <color name="bg_main">#0A0A1A</color>
-    <color name="bg_card">#0D0D1A</color>
-    <color name="bg_card_selected">#1A1A2E</color>
-    <color name="bg_header_gradient_start">#00D4FF</color>
-    <color name="bg_header_gradient_end">#0099CC</color>
+    <color name="bg_main">#06060F</color>
+    <color name="bg_card">#0C0C1D</color>
+    <color name="bg_card_selected">#1A1A3E</color>
+    <color name="bg_header_gradient_start">#7C3AED</color>
+    <color name="bg_header_gradient_end">#06B6D4</color>
 
     <!-- Text -->
     <color name="text_primary">#1A1A2E</color>
