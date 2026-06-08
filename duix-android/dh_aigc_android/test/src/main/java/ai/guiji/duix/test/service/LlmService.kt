@@ -21,6 +21,8 @@ class LlmService {
         private const val TAG = "LlmService"
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 1000L
+        // 最大保留对话轮数（1轮 = 1条user + 1条assistant），超出时删除最早的轮次
+        private const val MAX_CONVERSATION_ROUNDS = 20
     }
 
     private val client = OkHttpClient.Builder()
@@ -150,6 +152,7 @@ class LlmService {
                     val reader = BufferedReader(InputStreamReader(response.body?.byteStream()))
                     var line: String?
                     var lastValidText = ""
+                    var doneReceived = false
 
                     while (reader.readLine().also { line = it } != null) {
                         val currentLine = line ?: continue
@@ -168,6 +171,8 @@ class LlmService {
                                 }
 
                                 isRequesting.set(false)
+                                doneReceived = true
+                                trimHistory()
                                 callback.onComplete(fullText.toString())
                                 break
                             }
@@ -189,26 +194,28 @@ class LlmService {
                         }
                     }
 
-                    // 处理流意外结束的情况
-                    if (fullText.isNotEmpty()) {
-                        synchronized(messages) {
-                            val assistantMsg = JSONObject()
-                            assistantMsg.put("role", "assistant")
-                            assistantMsg.put("content", fullText.toString())
-                            messages.put(assistantMsg)
+                    // 处理流意外结束的情况（未收到 [DONE]）
+                    if (!doneReceived) {
+                        if (fullText.isNotEmpty()) {
+                            synchronized(messages) {
+                                val assistantMsg = JSONObject()
+                                assistantMsg.put("role", "assistant")
+                                assistantMsg.put("content", fullText.toString())
+                                messages.put(assistantMsg)
+                            }
+                            isRequesting.set(false)
+                            callback.onComplete(fullText.toString())
+                        } else if (retryCount < MAX_RETRIES) {
+                            synchronized(messages) {
+                                removeLastMessage()
+                            }
+                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                chatWithRetry(userMessage, callback, retryCount + 1)
+                            }, RETRY_DELAY_MS)
+                        } else {
+                            isRequesting.set(false)
+                            callback.onComplete("")
                         }
-                        isRequesting.set(false)
-                        callback.onComplete(fullText.toString())
-                    } else if (retryCount < MAX_RETRIES) {
-                        synchronized(messages) {
-                            removeLastMessage()
-                        }
-                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                            chatWithRetry(userMessage, callback, retryCount + 1)
-                        }, RETRY_DELAY_MS)
-                    } else {
-                        isRequesting.set(false)
-                        callback.onComplete("")
                     }
 
                     try { reader.close() } catch (_: Exception) {}
@@ -248,6 +255,27 @@ class LlmService {
             systemMsg.put("role", "system")
             systemMsg.put("content", AiConfig.LLM_SYSTEM_PROMPT)
             messages.put(systemMsg)
+        }
+    }
+
+    /**
+     * 裁剪对话历史，保留 system 消息 + 最近 MAX_CONVERSATION_ROUNDS 轮对话
+     * 防止消息数组无限增长导致 API 请求过大或内存溢出
+     */
+    private fun trimHistory() {
+        synchronized(messages) {
+            // messages[0] 是 system 消息，之后每2条为一轮（user + assistant）
+            val maxMessages = 1 + MAX_CONVERSATION_ROUNDS * 2
+            if (messages.length() > maxMessages) {
+                // 删除最早的对话轮次（保留 system 消息）
+                val removeCount = messages.length() - maxMessages
+                // 确保删除偶数条（完整的轮次），从 index 1 开始
+                val adjustedRemoveCount = removeCount / 2 * 2
+                for (i in 1..adjustedRemoveCount) {
+                    messages.remove(1) // 总是删除 index 1（system 消息之后最早的）
+                }
+                Log.i(TAG, "对话历史已裁剪: 删除 ${adjustedRemoveCount / 2} 轮, 剩余 ${messages.length()} 条消息")
+            }
         }
     }
 

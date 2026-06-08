@@ -1167,7 +1167,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
      */
     private fun synthesizeWithQwenTts(text: String, currentDuix: DUIX) {
         Log.i(TAG, "尝试 Qwen TTS 合成: ${text.take(30)}...")
-        val pushedOnce = booleanArrayOf(false)
+        val pushedOnce = java.util.concurrent.atomic.AtomicBoolean(false)
         try {
             qwenTtsService.synthesize(text, AiConfig.TTS_DEFAULT_VOICE, object : QwenTtsService.Callback {
                 override fun onAudioData(pcmData: ByteArray) {
@@ -1181,9 +1181,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     Log.i(TAG, "Qwen TTS 返回PCM: ${pcmData.size} bytes (24kHz) -> ${resampledPcm.size} bytes (16kHz)")
                     Thread {
                         try {
-                            if (!pushedOnce[0]) {
+                            if (pushedOnce.compareAndSet(false, true)) {
                                 currentDuix.startPush()
-                                pushedOnce[0] = true
                             }
                             // 写入 PCM 数据（16kHz mono 16bit，DUIX 要求）
                             try {
@@ -1251,7 +1250,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
      */
     private fun synthesizeWithMimoTts(text: String, currentDuix: DUIX) {
         Log.i(TAG, "尝试 MiMo TTS 合成: ${text.take(30)}...")
-        val pushedOnce = booleanArrayOf(false)
+        val pushedOnce = java.util.concurrent.atomic.AtomicBoolean(false)
         try {
             mimoTtsService.synthesize(text, AiConfig.MIMO_TTS_DEFAULT_VOICE, object : MimoTtsService.Callback {
                 override fun onAudioData(pcmData: ByteArray) {
@@ -1265,9 +1264,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     Log.i(TAG, "MiMo TTS 返回PCM: ${pcmData.size} bytes -> ${resampledPcm.size} bytes (16kHz)")
                     Thread {
                         try {
-                            if (!pushedOnce[0]) {
+                            if (pushedOnce.compareAndSet(false, true)) {
                                 currentDuix.startPush()
-                                pushedOnce[0] = true
                             }
                             try {
                                 currentDuix.pushPcm(resampledPcm)
@@ -1331,14 +1329,17 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
      */
     private fun synthesizeWithEdgeTts(text: String, currentDuix: DUIX) {
         Log.i(TAG, "尝试 Edge TTS 合成: ${text.take(30)}...")
+        val pushedOnce = java.util.concurrent.atomic.AtomicBoolean(false)
         try {
             edgeTtsService.synthesize(text, EdgeTtsService.VOICE_XIAOXIAO, object : EdgeTtsService.Callback {
                 override fun onAudioData(mp3Data: ByteArray) {
                     Log.i(TAG, "Edge TTS 返回音频数据: ${mp3Data.size} bytes")
                     Thread {
                         try {
-                            Log.i(TAG, "调用 startPush()")
-                            currentDuix.startPush()
+                            if (pushedOnce.compareAndSet(false, true)) {
+                                Log.i(TAG, "调用 startPush()")
+                                currentDuix.startPush()
+                            }
                             var totalPcmBytes = 0L
                             var pcmChunkCount = 0
                             if (!::mp3ToPcmConverter.isInitialized) {
