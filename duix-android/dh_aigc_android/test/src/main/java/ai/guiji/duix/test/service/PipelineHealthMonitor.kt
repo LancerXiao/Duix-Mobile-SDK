@@ -11,7 +11,10 @@ import android.util.Log
  * 1. 状态机卡死检测：THINKING/SPEAKING 超时未恢复
  * 2. 状态机异常转换：非法状态跳转（如 SPEAKING → LISTENING）
  * 3. TTS 管线断裂：SPEAKING 后长时间无音频播放
- * 4. 自动修复：超时后强制恢复 IDLE + scheduleAutoListen
+ * 4. 网络状态检查：网络不可用时告警
+ * 5. TTS 引擎可用性：TTS 引擎初始化失败时告警
+ * 6. DUIX SDK 状态：SDK 未就绪时告警
+ * 7. 自动修复：超时后强制恢复 IDLE + scheduleAutoListen
  *
  * 使用方式：
  *   PipelineHealthMonitor(host).start()
@@ -34,6 +37,12 @@ class PipelineHealthMonitor(private val host: HealthHost) {
         fun getStateDurationMs(): Long
         fun forceRecoverToIdle(reason: String)
         fun onHealthAlert(alert: HealthAlert)
+        /** 检查网络是否可用 */
+        fun isNetworkAvailable(): Boolean
+        /** 检查 DUIX SDK 是否就绪 */
+        fun isDuiXSdkReady(): Boolean
+        /** 检查当前 TTS 引擎是否可用 */
+        fun isCurrentTtsEngineReady(): Boolean
     }
 
     data class HealthAlert(
@@ -44,15 +53,23 @@ class PipelineHealthMonitor(private val host: HealthHost) {
     )
 
     enum class AlertType {
-        STATE_STUCK,          // 状态卡死
-        STATE_ILLEGAL_TRANSITION,  // 非法状态转换
-        TTS_PIPELINE_BROKEN   // TTS 管线断裂
+        STATE_STUCK,                  // 状态卡死
+        STATE_ILLEGAL_TRANSITION,     // 非法状态转换
+        TTS_PIPELINE_BROKEN,          // TTS 管线断裂
+        NETWORK_UNAVAILABLE,          // 网络不可用
+        DUIX_SDK_NOT_READY,           // DUIX SDK 未就绪
+        TTS_ENGINE_NOT_READY          // TTS 引擎不可用
     }
 
     private val handler = Handler(Looper.getMainLooper())
     private var isMonitoring = false
     private var lastState: PipelineSelfTest.CallState = PipelineSelfTest.CallState.IDLE
     private var consecutiveStuckCount = 0
+    // 环境检查去重：避免重复告警
+    private var lastNetworkAlertTime = 0L
+    private var lastDuiXAlertTime = 0L
+    private var lastTtsAlertTime = 0L
+    private val ENV_ALERT_COOLDOWN_MS = 30_000L  // 同类环境告警冷却 30 秒
 
     private val checkRunnable = object : Runnable {
         override fun run() {
@@ -107,7 +124,9 @@ class PipelineHealthMonitor(private val host: HealthHost) {
     private fun performHealthCheck() {
         val currentState = host.getCallState()
         val durationMs = host.getStateDurationMs()
+        val now = System.currentTimeMillis()
 
+        // 1. 状态卡死检测
         when (currentState) {
             PipelineSelfTest.CallState.THINKING -> {
                 if (durationMs > MAX_THINKING_DURATION_MS) {
@@ -152,12 +171,11 @@ class PipelineHealthMonitor(private val host: HealthHost) {
                 }
             }
             PipelineSelfTest.CallState.IDLE -> {
-                // IDLE 是正常状态，无需检查
                 consecutiveStuckCount = 0
             }
         }
 
-        // 连续卡死 3 次以上，上报严重告警
+        // 2. 连续卡死告警
         if (consecutiveStuckCount >= 3) {
             val alert = HealthAlert(
                 type = AlertType.TTS_PIPELINE_BROKEN,
@@ -166,6 +184,47 @@ class PipelineHealthMonitor(private val host: HealthHost) {
                 message = "管线连续卡死 $consecutiveStuckCount 次，可能存在系统性问题"
             )
             Log.e(TAG, alert.message)
+            host.onHealthAlert(alert)
+        }
+
+        // 3. 网络状态检查（仅在 THINKING/SPEAKING 时检查，IDLE 时网络断开不影响）
+        if (currentState == PipelineSelfTest.CallState.THINKING || currentState == PipelineSelfTest.CallState.SPEAKING) {
+            if (!host.isNetworkAvailable() && now - lastNetworkAlertTime > ENV_ALERT_COOLDOWN_MS) {
+                lastNetworkAlertTime = now
+                val alert = HealthAlert(
+                    type = AlertType.NETWORK_UNAVAILABLE,
+                    state = currentState,
+                    durationMs = durationMs,
+                    message = "网络不可用，当前状态=$currentState 可能无法完成"
+                )
+                Log.w(TAG, alert.message)
+                host.onHealthAlert(alert)
+            }
+        }
+
+        // 4. DUIX SDK 状态检查
+        if (currentState != PipelineSelfTest.CallState.IDLE && !host.isDuiXSdkReady() && now - lastDuiXAlertTime > ENV_ALERT_COOLDOWN_MS) {
+            lastDuiXAlertTime = now
+            val alert = HealthAlert(
+                type = AlertType.DUIX_SDK_NOT_READY,
+                state = currentState,
+                durationMs = durationMs,
+                message = "DUIX SDK 未就绪，当前状态=$currentState 可能无法正常工作"
+            )
+            Log.w(TAG, alert.message)
+            host.onHealthAlert(alert)
+        }
+
+        // 5. TTS 引擎可用性检查（仅在 SPEAKING 时检查）
+        if (currentState == PipelineSelfTest.CallState.SPEAKING && !host.isCurrentTtsEngineReady() && now - lastTtsAlertTime > ENV_ALERT_COOLDOWN_MS) {
+            lastTtsAlertTime = now
+            val alert = HealthAlert(
+                type = AlertType.TTS_ENGINE_NOT_READY,
+                state = currentState,
+                durationMs = durationMs,
+                message = "当前 TTS 引擎不可用，SPEAKING 状态可能无法完成"
+            )
+            Log.w(TAG, alert.message)
             host.onHealthAlert(alert)
         }
     }
@@ -184,20 +243,16 @@ class PipelineHealthMonitor(private val host: HealthHost) {
 
         return when (from) {
             PipelineSelfTest.CallState.IDLE -> {
-                // IDLE 只能转到 LISTENING 或 THINKING
                 to != PipelineSelfTest.CallState.LISTENING && to != PipelineSelfTest.CallState.THINKING
             }
             PipelineSelfTest.CallState.LISTENING -> {
-                // LISTENING 只能转到 THINKING 或 IDLE
                 to != PipelineSelfTest.CallState.THINKING
             }
             PipelineSelfTest.CallState.THINKING -> {
-                // THINKING 只能转到 SPEAKING 或 IDLE
                 to != PipelineSelfTest.CallState.SPEAKING
             }
             PipelineSelfTest.CallState.SPEAKING -> {
-                // SPEAKING 只能转到 IDLE
-                true  // 任何非 IDLE 转换都是非法的
+                true
             }
         }
     }

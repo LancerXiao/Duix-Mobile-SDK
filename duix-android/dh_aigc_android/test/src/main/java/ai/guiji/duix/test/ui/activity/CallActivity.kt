@@ -890,7 +890,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         if (currentState == State.THINKING || currentState == State.SPEAKING) return
 
         // 检查网络连接
-        if (!isNetworkAvailable()) {
+        if (!isNetworkAvailableInternal()) {
             showErrorBanner("网络不可用，请检查网络连接", 4000)
             updateStatus("网络不可用")
             return
@@ -1897,7 +1897,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 messageAdapter.removeAt(lastAiIndex)
             }
             // 4) 网络检查
-            if (!isNetworkAvailable()) {
+            if (!isNetworkAvailableInternal()) {
                 showErrorBanner("网络不可用，请检查网络连接", 4000)
                 return
             }
@@ -2009,7 +2009,15 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         btnSelfTest.setOnClickListener {
             performHapticFeedback()
             dialog.dismiss()
-            startPipelineSelfTest(3)
+            startPipelineSelfTest(3, PipelineSelfTest.TestMode.TEXT_ONLY)
+        }
+
+        // [E2E自测] ASR+全链路自测按钮
+        val btnSelfTestWithAsr = dialogView.findViewById<TextView>(R.id.btnSelfTestWithAsr)
+        btnSelfTestWithAsr.setOnClickListener {
+            performHapticFeedback()
+            dialog.dismiss()
+            startPipelineSelfTest(3, PipelineSelfTest.TestMode.WITH_ASR)
         }
 
         // 关闭按钮
@@ -2186,7 +2194,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     }
 
     @Suppress("DEPRECATION")
-    private fun isNetworkAvailable(): Boolean {
+    private fun isNetworkAvailableInternal(): Boolean {
         try {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
             val network = cm.activeNetwork ?: return false
@@ -2281,6 +2289,34 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         runOnUiThread { sendToLlm(text) }
     }
 
+    override fun simulateAsrInput(text: String) {
+        // 模拟 ASR 语音输入：启动录音，然后延迟注入识别结果
+        runOnUiThread {
+            if (currentState != State.IDLE) {
+                Log.w(TAG, "[SELF-TEST] simulateAsrInput: 当前状态=$currentState，非 IDLE，跳过")
+                return@runOnUiThread
+            }
+            // 先启动录音（进入 LISTENING 状态）
+            doStartListening()
+            // 延迟 2 秒后注入识别结果（模拟用户说话完毕）
+            mainHandler.postDelayed({
+                if (currentState == State.LISTENING) {
+                    // 停止录音并注入文本
+                    userStoppedAsr = true
+                    handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
+                    lastPartialText = ""
+                    try { asrService.stopListening() } catch (e: Exception) { Log.e(TAG, "模拟ASR停止异常", e) }
+                    abandonAudioFocus()
+                    setState(State.IDLE)
+                    updateStatus("识别完成")
+                    updateUI()
+                    cancelAutoListen()
+                    sendToLlm(text)
+                }
+            }, 2000L)
+        }
+    }
+
     override fun isDuiXReady(): Boolean = _isDuiXReady
 
     override fun currentTtsEngineName(): String = getTtsEngineDisplayName(currentTtsEngine)
@@ -2313,7 +2349,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
      * [E2E自测] 启动管线端到端自测
      * 自动模拟用户输入 → LLM → TTS → 数字人 → 验证状态恢复
      */
-    private fun startPipelineSelfTest(rounds: Int = 3) {
+    private fun startPipelineSelfTest(rounds: Int = 3, mode: PipelineSelfTest.TestMode = PipelineSelfTest.TestMode.TEXT_ONLY) {
         if (isSelfTestRunning) {
             showToast("自测已在运行中")
             return
@@ -2326,8 +2362,9 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         // 取消自动监听，避免干扰自测
         cancelAutoListen()
         pipelineSelfTest = PipelineSelfTest(this)
-        pipelineSelfTest?.start(rounds)
-        showToast("自测开始: $rounds 轮对话")
+        pipelineSelfTest?.start(rounds, mode)
+        val modeName = if (mode == PipelineSelfTest.TestMode.WITH_ASR) "ASR+全链路" else "文本"
+        showToast("自测开始: $rounds 轮$modeName 对话")
     }
 
     /**
@@ -2336,17 +2373,24 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     @SuppressLint("SetTextI18n")
     private fun showSelfTestResultDialog(results: List<PipelineSelfTest.RoundResult>, summary: String) {
         try {
-            val passed = results.count { it.llmSuccess && it.ttsSuccess && it.stateRecovery }
+            val passed = results.count { it.asrSuccess && it.llmSuccess && it.ttsSuccess && it.stateRecovery }
             val failed = results.size - passed
             val title = if (failed == 0) "自测全部通过" else "自测完成 (${failed}项失败)"
 
             val message = buildString {
                 results.forEach { r ->
-                    val icon = if (r.llmSuccess && r.ttsSuccess && r.stateRecovery) "✓" else "✗"
+                    val allPass = r.asrSuccess && r.llmSuccess && r.ttsSuccess && r.stateRecovery
+                    val icon = if (allPass) "✓" else "✗"
                     append("$icon 第${r.round}轮: ${r.durationMs}ms")
+                    if (r.testMode == PipelineSelfTest.TestMode.WITH_ASR && !r.asrSuccess) append(" [ASR失败]")
                     if (!r.llmSuccess) append(" [LLM失败]")
                     if (!r.ttsSuccess) append(" [TTS失败]")
                     if (!r.stateRecovery) append(" [状态未恢复]")
+                    // 各阶段耗时
+                    val t = r.stageTiming
+                    if (t.asrStartMs > 0 && t.asrEndMs > 0) append(" ASR=${t.asrEndMs - t.asrStartMs}ms")
+                    if (t.thinkingStartMs > 0 && t.thinkingEndMs > 0) append(" LLM=${t.thinkingEndMs - t.thinkingStartMs}ms")
+                    if (t.speakingStartMs > 0 && t.speakingEndMs > 0) append(" TTS=${t.speakingEndMs - t.speakingStartMs}ms")
                     r.errorDetail?.let { append(" - $it") }
                     append("\n")
                 }
@@ -2401,7 +2445,26 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 PipelineHealthMonitor.AlertType.TTS_PIPELINE_BROKEN -> {
                     showErrorBanner("TTS管线异常: ${alert.message}", 5000)
                 }
+                PipelineHealthMonitor.AlertType.NETWORK_UNAVAILABLE -> {
+                    showErrorBanner("网络不可用，对话可能失败", 4000)
+                }
+                PipelineHealthMonitor.AlertType.DUIX_SDK_NOT_READY -> {
+                    showErrorBanner("数字人未就绪，请等待加载", 4000)
+                }
+                PipelineHealthMonitor.AlertType.TTS_ENGINE_NOT_READY -> {
+                    showErrorBanner("语音引擎不可用，尝试切换引擎", 4000)
+                }
             }
         }
+    }
+
+    override fun isNetworkAvailable(): Boolean = this.isNetworkAvailableInternal()
+
+    override fun isDuiXSdkReady(): Boolean = _isDuiXReady
+
+    override fun isCurrentTtsEngineReady(): Boolean = when (currentTtsEngine) {
+        TtsEngine.EDGE_TTS -> true  // Edge TTS 无需初始化
+        TtsEngine.QWEN_TTS -> true  // Qwen TTS 无需初始化
+        TtsEngine.ANDROID_TTS -> ::androidTtsService.isInitialized && androidTtsService.isReady()
     }
 }
