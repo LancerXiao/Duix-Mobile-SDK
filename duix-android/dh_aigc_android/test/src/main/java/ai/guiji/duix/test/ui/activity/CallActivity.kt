@@ -494,7 +494,13 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_START -> {
                     runOnUiThread {
                         Log.i(TAG, "AUDIO_PLAY_START: 数字人开始播放音频")
-                        setState(State.SPEAKING)
+                        // 只在非 SPEAKING 状态时切换，避免重复设置和非法状态转换
+                        if (currentState != State.SPEAKING) {
+                            if (currentState == State.IDLE) {
+                                setState(State.THINKING)
+                            }
+                            setState(State.SPEAKING)
+                        }
                         updateUI()
                     }
                 }
@@ -569,7 +575,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         // 1) 添加 AI 消息到历史（不显示 user 消息，模拟数字人主动开口）
         messageAdapter.append(MessageData(MessageData.Role.AI, greeting))
         scrollMessagesToBottom()
-        // 2) 状态切换到 SPEAKING
+        // 2) 状态切换：IDLE → THINKING → SPEAKING（避免非法状态转换 IDLE→SPEAKING）
+        setState(State.THINKING)
         setState(State.SPEAKING)
         updateStatus("打招呼中")
         updateUI()
@@ -985,7 +992,15 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
      * 优先使用 Edge TTS，失败时自动切换到 Android 原生 TTS
      */
     private fun synthesizeAndPlay(text: String) {
-        setState(State.SPEAKING)
+        // 只在非 SPEAKING 状态时才切换，避免重复设置和非法状态转换
+        if (currentState != State.SPEAKING) {
+            // 如果当前是 THINKING，THINKING→SPEAKING 是合法的
+            // 如果当前是 IDLE（不应该发生），先走 THINKING 再走 SPEAKING
+            if (currentState == State.IDLE) {
+                setState(State.THINKING)
+            }
+            setState(State.SPEAKING)
+        }
         updateUI()
         // [Bug fix] 启动 SPEAKING 超时保护
         scheduleSpeakingTimeout()
@@ -1630,6 +1645,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         if (thinking) {
             // 开始思考：插入一条"思考中"占位消息
             messageAdapter.append(MessageData(MessageData.Role.AI, "", isThinking = true))
+            scrollMessagesToBottom()
         } else {
             // 更新最后一条 AI 消息的文本
             val msgs = messageAdapter.snapshot()
@@ -1637,18 +1653,24 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 messageAdapter.updateLast(MessageData(MessageData.Role.AI, text, isThinking = false))
             } else {
                 messageAdapter.append(MessageData(MessageData.Role.AI, text))
+                scrollMessagesToBottom()
             }
+            // [Bug fix] updateLast 使用 payload 局部更新，不需要每次都滚动
+            // 只在 append 新消息时滚动，避免 LLM token 流式回调时疯狂滚动
         }
-        scrollMessagesToBottom()
     }
 
     /**
      * 滚动消息列表到底部（Phase 2.2 + UI-6 微动效）
      * 延迟 80ms 确保 RecyclerView 已经完成 item 插入布局
      * 否则 smoothScrollToPosition 可能滚动到错误位置
+     * 增加防抖：避免 LLM token 流式回调时疯狂滚动
      */
+    private var scrollJob: Runnable? = null
     private fun scrollMessagesToBottom() {
-        binding.messagesList.postDelayed({
+        // 取消之前的滚动任务（防抖）
+        scrollJob?.let { binding.messagesList.removeCallbacks(it) }
+        scrollJob = Runnable {
             try {
                 val count = messageAdapter.itemCount
                 if (count > 0) {
@@ -1657,7 +1679,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             } catch (e: Exception) {
                 // 静默吞掉
             }
-        }, 80L)
+        }
+        binding.messagesList.postDelayed(scrollJob!!, 150L)
     }
 
     /**

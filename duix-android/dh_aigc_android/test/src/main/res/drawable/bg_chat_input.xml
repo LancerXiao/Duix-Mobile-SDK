@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 聊天输入框：磨砂半透深色 + 圆角 20dp + 细边框 -->
+<!-- 聊天输入框：磨砂半透深色 + 圆角 22dp + 品牌色微光边框 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="#991A1A2E" />
     <stroke
         android:width="0.5dp"
-        android:color="#22FFFFFF" />
-    <corners android:radius="20dp" />
+        android:color="#2200D4FF" />
+    <corners android:radius="22dp" />
 </shape>

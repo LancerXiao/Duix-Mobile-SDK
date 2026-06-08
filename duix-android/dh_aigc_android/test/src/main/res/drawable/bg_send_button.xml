@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 发送按钮：蓝青品牌色渐变 + 圆角 -->
+<!-- 发送按钮：蓝青品牌色渐变 + 圆形 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
+    android:shape="oval">
     <gradient
         android:type="linear"
         android:angle="135"
         android:startColor="#00D4FF"
         android:endColor="#0099CC" />
-    <corners android:radius="18dp" />
 </shape>

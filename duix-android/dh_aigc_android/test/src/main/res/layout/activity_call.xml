@@ -70,39 +70,39 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:background="@drawable/bg_interrupt_hint"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
         android:gravity="center"
         android:text="点击数字人打断"
         android:textColor="#FFFFFFFF"
-        android:textSize="12sp"
+        android:textSize="13sp"
         android:textStyle="bold"
         android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginTop="60dp" />
+        android:layout_marginTop="72dp" />
 
-    <!-- Top toolbar - 现代化毛玻璃风格，44dp 触摸目标 -->
+    <!-- Top toolbar - 56dp 高度，48dp 触摸目标，更宽松的间距 -->
     <LinearLayout
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="52dp"
+        android:layout_height="56dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:background="@drawable/bg_toolbar"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
         app:layout_constraintTop_toTopOf="parent">
 
-        <!-- Back button - 44dp 触摸目标 -->
+        <!-- Back button - 48dp 触摸目标 -->
         <ImageView
             android:id="@+id/btnBack"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:padding="10dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
             android:src="@drawable/ic_back"
             android:contentDescription="返回"
             android:background="?attr/selectableItemBackgroundBorderless"
@@ -111,9 +111,9 @@
         <!-- New chat button -->
         <ImageView
             android:id="@+id/btnNewChat"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:padding="10dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
             android:src="@drawable/ic_new_chat"
             android:contentDescription="新建对话"
             android:background="?attr/selectableItemBackgroundBorderless"
@@ -122,9 +122,9 @@
         <!-- 悬浮窗开关 -->
         <ImageView
             android:id="@+id/btnFloating"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:padding="10dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
             android:src="@drawable/ic_floating_pin"
             android:contentDescription="悬浮窗"
             android:background="?attr/selectableItemBackgroundBorderless"
@@ -139,15 +139,16 @@
             android:gravity="center"
             android:text="DUIX 数字人"
             android:textColor="@color/white"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            android:textSize="17sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.02" />
 
-        <!-- 设置按钮：点击弹出 ASR/TTS 设置弹窗 -->
+        <!-- 设置按钮：48dp 触摸目标，更大的图标 -->
         <ImageView
             android:id="@+id/btnSettings"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:padding="10dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="11dp"
             android:src="@drawable/ic_settings"
             android:contentDescription="设置"
             android:background="?attr/selectableItemBackgroundBorderless"
@@ -156,9 +157,9 @@
         <!-- Mute button -->
         <ImageView
             android:id="@+id/btnMute"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:padding="10dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
             android:src="@drawable/ic_pause"
             android:contentDescription="静音"
             android:background="?attr/selectableItemBackgroundBorderless"
@@ -167,9 +168,9 @@
         <!-- Unmute button (hidden by default) -->
         <ImageView
             android:id="@+id/btnUnmute"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:padding="10dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
             android:src="@drawable/ic_play"
             android:contentDescription="取消静音"
             android:background="?attr/selectableItemBackgroundBorderless"
@@ -178,17 +179,17 @@
 
     </LinearLayout>
 
-    <!-- Status indicator - 紧凑药丸样式 -->
+    <!-- Status indicator - 精致药丸样式 -->
     <TextView
         android:id="@+id/tvStatus"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
+        android:layout_marginTop="4dp"
         android:background="@drawable/bg_status_pill"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
         android:text="初始化中..."
         android:textColor="#CCFFFFFF"
         android:textSize="11sp"
@@ -203,12 +204,13 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:layout_marginStart="10dp"
-        android:layout_marginEnd="10dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
         android:layout_marginBottom="4dp"
         android:clipToPadding="false"
+        android:overScrollMode="never"
         app:layout_constrainedHeight="true"
-        app:layout_constraintHeight_max="120dp"
+        app:layout_constraintHeight_max="140dp"
         app:layout_constraintBottom_toTopOf="@+id/quickActionsScroll"
         app:layout_constraintTop_toBottomOf="@+id/tvStatus"
         app:layout_constraintVertical_bias="1.0"
@@ -219,10 +221,10 @@
     <HorizontalScrollView
         android:id="@+id/quickActionsScroll"
         android:layout_width="match_parent"
-        android:layout_height="34dp"
-        android:layout_marginStart="10dp"
-        android:layout_marginEnd="10dp"
-        android:layout_marginBottom="4dp"
+        android:layout_height="36dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="6dp"
         android:scrollbars="none"
         android:fillViewport="true"
         app:layout_constraintBottom_toTopOf="@+id/bottomPanel"
@@ -270,10 +272,10 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:background="@drawable/bg_bottom_panel"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="12dp"
-        android:paddingBottom="16dp"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="20dp"
         app:layout_constraintBottom_toBottomOf="parent">
 
         <!-- 状态图标行 -->
@@ -284,11 +286,11 @@
             android:orientation="horizontal"
             android:gravity="center"
             android:background="@drawable/bg_state_indicator"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp"
-            android:layout_marginBottom="2dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp"
+            android:layout_marginBottom="4dp"
             android:visibility="gone">
 
             <ImageView
@@ -350,7 +352,7 @@
             <EditText
                 android:id="@+id/etInput"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="46dp"
                 android:layout_weight="1"
                 android:background="@drawable/bg_chat_input"
                 android:hint="输入消息..."
@@ -358,8 +360,8 @@
                 android:textColor="@color/white"
                 android:textSize="14sp"
                 android:enabled="false"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
+                android:paddingStart="18dp"
+                android:paddingEnd="18dp"
                 android:inputType="text"
                 android:imeOptions="actionSend"
                 android:singleLine="true" />
@@ -367,13 +369,13 @@
             <!-- Send button -->
             <ImageView
                 android:id="@+id/btnSend"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:layout_marginStart="8dp"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:layout_marginStart="10dp"
                 android:background="@drawable/bg_send_button"
                 android:foreground="@drawable/selector_send_ripple"
                 android:elevation="2dp"
-                android:padding="10dp"
+                android:padding="11dp"
                 android:src="@drawable/ic_send"
                 android:contentDescription="发送"
                 android:enabled="false"
@@ -386,14 +388,14 @@
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="12dp"
             android:gravity="center">
 
             <!-- Recording pulse ring (outer) -->
             <View
                 android:id="@+id/recordingPulseOuter"
-                android:layout_width="76dp"
-                android:layout_height="76dp"
+                android:layout_width="80dp"
+                android:layout_height="80dp"
                 android:layout_gravity="center"
                 android:background="@drawable/bg_recording_pulse"
                 android:visibility="gone" />
@@ -401,8 +403,8 @@
             <!-- Recording pulse ring (inner) -->
             <View
                 android:id="@+id/recordingPulseInner"
-                android:layout_width="68dp"
-                android:layout_height="68dp"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
                 android:layout_gravity="center"
                 android:background="@drawable/bg_mic_recording_outer"
                 android:visibility="gone" />
@@ -410,13 +412,13 @@
             <!-- Mic button -->
             <ImageView
                 android:id="@+id/btnMic"
-                android:layout_width="60dp"
-                android:layout_height="60dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:layout_gravity="center"
                 android:background="@drawable/bg_mic_button"
                 android:foreground="@drawable/selector_mic_ripple"
                 android:elevation="4dp"
-                android:padding="14dp"
+                android:padding="16dp"
                 android:src="@drawable/ic_mic"
                 android:contentDescription="按住说话"
                 android:enabled="false"
@@ -431,7 +433,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="6dp"
             android:text="按住说话"
             android:textColor="#99FFFFFF"
             android:textSize="12sp" />

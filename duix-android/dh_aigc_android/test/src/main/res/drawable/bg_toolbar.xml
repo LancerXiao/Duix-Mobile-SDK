@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 工具栏：毛玻璃深蓝青色 + 底部细分隔线 -->
+<!-- 工具栏：毛玻璃深蓝青色 + 底部品牌色微光分隔线 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape android:shape="rectangle">
@@ -9,8 +9,13 @@
     <item
         android:gravity="bottom">
         <shape android:shape="rectangle">
-            <size android:height="0.5dp" />
-            <solid android:color="#1A00D4FF" />
+            <size android:height="1dp" />
+            <gradient
+                android:type="linear"
+                android:angle="0"
+                android:startColor="#0000D4FF"
+                android:centerColor="#4400D4FF"
+                android:endColor="#0000D4FF" />
         </shape>
     </item>
 </layer-list>

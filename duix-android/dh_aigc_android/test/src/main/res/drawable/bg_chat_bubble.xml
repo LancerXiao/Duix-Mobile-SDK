@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- AI 消息气泡：磨砂半透深色 + 16dp 圆角 -->
+<!-- AI 消息气泡：磨砂半透深色 + 16dp 圆角 + 品牌色微光边框 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="#B31A1A2E" />
     <stroke
         android:width="0.5dp"
-        android:color="#1AFFFFFF" />
+        android:color="#3300D4FF" />
     <corners
         android:topLeftRadius="16dp"
         android:topRightRadius="16dp"

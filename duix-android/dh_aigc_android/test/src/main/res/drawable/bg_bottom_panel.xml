@@ -1,15 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 底部面板：渐变深色 + 顶部 24dp 圆角，蓝青色调 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <gradient
-        android:type="linear"
-        android:angle="90"
-        android:startColor="#E60F1523"
-        android:endColor="#F20A0E1A" />
-    <corners
-        android:topLeftRadius="24dp"
-        android:topRightRadius="24dp"
-        android:bottomLeftRadius="0dp"
-        android:bottomRightRadius="0dp" />
-</shape>
+<!-- 底部面板：渐变深色 + 顶部 28dp 圆角 + 品牌色微光顶部边框 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 主体渐变 -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="linear"
+                android:angle="90"
+                android:startColor="#E60F1523"
+                android:endColor="#F20A0E1A" />
+            <corners
+                android:topLeftRadius="28dp"
+                android:topRightRadius="28dp"
+                android:bottomLeftRadius="0dp"
+                android:bottomRightRadius="0dp" />
+        </shape>
+    </item>
+    <!-- 顶部品牌色微光边框 -->
+    <item
+        android:gravity="top">
+        <shape android:shape="rectangle">
+            <size android:height="1dp" />
+            <gradient
+                android:type="linear"
+                android:angle="0"
+                android:startColor="#0000D4FF"
+                android:centerColor="#5500D4FF"
+                android:endColor="#0000D4FF" />
+            <corners
+                android:topLeftRadius="28dp"
+                android:topRightRadius="28dp" />
+        </shape>
+    </item>
+</layer-list>
