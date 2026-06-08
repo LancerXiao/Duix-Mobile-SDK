@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Mic button: violet-cyan gradient oval -->
+<!-- Mic button: violet-cyan gradient oval with shadow -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Shadow ring -->
     <item>
@@ -17,8 +17,21 @@
             <gradient
                 android:type="linear"
                 android:angle="135"
-                android:startColor="#7C3AED"
+                android:startColor="#8B5CF6"
+                android:centerColor="#7C3AED"
                 android:endColor="#06B6D4" />
+        </shape>
+    </item>
+    <!-- Inner glow ring -->
+    <item
+        android:left="2dp"
+        android:right="2dp"
+        android:top="2dp"
+        android:bottom="3dp">
+        <shape android:shape="oval">
+            <stroke
+                android:width="0.5dp"
+                android:color="#44FFFFFF" />
         </shape>
     </item>
 </layer-list>

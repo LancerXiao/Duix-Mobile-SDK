@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Chat input: frosted dark + rounded + glow border -->
+<!-- Chat input: frosted glass + 25dp rounded + glow border -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#991A1A2E" />
+    <solid android:color="#99141428" />
     <stroke
-        android:width="0.5dp"
-        android:color="#227C3AED" />
-    <corners android:radius="24dp" />
+        android:width="0.8dp"
+        android:color="#337C3AED" />
+    <corners android:radius="25dp" />
 </shape>

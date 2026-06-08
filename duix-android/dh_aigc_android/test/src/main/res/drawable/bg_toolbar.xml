@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Toolbar: frosted glass dark + bottom gradient glow line -->
+<!-- Toolbar: frosted glass + bottom gradient glow line -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape android:shape="rectangle">
@@ -9,13 +9,13 @@
     <item
         android:gravity="bottom">
         <shape android:shape="rectangle">
-            <size android:height="1.5dp" />
+            <size android:height="2dp" />
             <gradient
                 android:type="linear"
                 android:angle="0"
                 android:startColor="#007C3AED"
-                android:centerColor="#557C3AED"
-                android:endColor="#007C3AED" />
+                android:centerColor="#667C3AED"
+                android:endColor="#0006B6D4" />
         </shape>
     </item>
 </layer-list>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Quick action chip: frosted dark + violet border + rounded -->
+<!-- Quick action chip: frosted glass + violet border -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="#4D0C0C1D" />

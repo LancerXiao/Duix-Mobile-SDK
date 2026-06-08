@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Bottom panel: gradient dark + 32dp top corners + glow top border -->
+<!-- Bottom panel: gradient dark + 32dp top corners + gradient glow top border -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Main gradient -->
     <item>
@@ -16,17 +16,17 @@
                 android:bottomRightRadius="0dp" />
         </shape>
     </item>
-    <!-- Top glow border -->
+    <!-- Top gradient glow border -->
     <item
         android:gravity="top">
         <shape android:shape="rectangle">
-            <size android:height="1.5dp" />
+            <size android:height="2dp" />
             <gradient
                 android:type="linear"
                 android:angle="0"
                 android:startColor="#007C3AED"
                 android:centerColor="#667C3AED"
-                android:endColor="#007C3AED" />
+                android:endColor="#0006B6D4" />
             <corners
                 android:topLeftRadius="32dp"
                 android:topRightRadius="32dp" />

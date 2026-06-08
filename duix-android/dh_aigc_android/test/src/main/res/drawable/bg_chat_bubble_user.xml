@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- User message bubble: violet-cyan gradient + 18dp corners -->
+<!-- User message bubble: violet-cyan gradient + 20dp corners + glow -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <gradient
@@ -10,10 +10,10 @@
         android:endColor="#06B6D4" />
     <stroke
         android:width="0.5dp"
-        android:color="#447C3AED" />
+        android:color="#557C3AED" />
     <corners
-        android:topLeftRadius="18dp"
-        android:topRightRadius="18dp"
-        android:bottomLeftRadius="18dp"
+        android:topLeftRadius="20dp"
+        android:topRightRadius="20dp"
+        android:bottomLeftRadius="20dp"
         android:bottomRightRadius="4dp" />
 </shape>

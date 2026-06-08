@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Error banner: frosted dark + red accent border + rounded -->
+<!-- Error banner: frosted dark + red accent border -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#CC1A1A2E" />
+    <solid android:color="#CC141428" />
     <stroke
-        android:width="0.5dp"
+        android:width="0.8dp"
         android:color="#44EF4444" />
-    <corners android:radius="12dp" />
+    <corners android:radius="14dp" />
 </shape>

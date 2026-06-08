@@ -40,6 +40,19 @@
     <color name="divider">#E5E7EB</color>
     <color name="card_shadow">#1A000000</color>
 
+    <!-- Glow effects -->
+    <color name="glow_violet">#337C3AED</color>
+    <color name="glow_cyan">#3306B6D4</color>
+
+    <!-- Gradient stops -->
+    <color name="gradient_start">#7C3AED</color>
+    <color name="gradient_mid">#6D28D9</color>
+    <color name="gradient_end">#06B6D4</color>
+
+    <!-- Surface variants -->
+    <color name="surface_elevated">#141428</color>
+    <color name="surface_glass">#1A0C0C1D</color>
+
     <!-- Legacy compat -->
     <color name="primary_old">#5a7bbe</color>
     <color name="primary_99_old">#995a7bbe</color>

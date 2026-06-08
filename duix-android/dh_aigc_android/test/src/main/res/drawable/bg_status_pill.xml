@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Status pill: frosted dark + glow border + rounded -->
+<!-- Status pill: frosted glass + gradient glow border -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="#660A0A1A" />
     <stroke
-        android:width="0.5dp"
-        android:color="#227C3AED" />
-    <corners android:radius="14dp" />
+        android:width="0.8dp"
+        android:color="#337C3AED" />
+    <corners android:radius="16dp" />
 </shape>

@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Engine chip selector -->
+<!-- Engine chip selector: glass effect with glow when selected -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Selected: violet brand color -->
+    <!-- Selected: violet brand color with glow -->
     <item android:state_activated="true">
         <shape android:shape="rectangle">
             <solid android:color="#337C3AED" />
-            <stroke android:width="1dp" android:color="#7C3AED" />
+            <stroke android:width="1.5dp" android:color="#7C3AED" />
             <corners android:radius="12dp" />
         </shape>
     </item>
-    <!-- Unselected: semi-transparent dark -->
+    <!-- Unselected: frosted glass -->
     <item>
         <shape android:shape="rectangle">
             <solid android:color="#1AFFFFFF" />

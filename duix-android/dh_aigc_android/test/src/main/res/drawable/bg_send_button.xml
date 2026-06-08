@@ -1,10 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Send button: violet-cyan gradient oval -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="oval">
-    <gradient
-        android:type="linear"
-        android:angle="135"
-        android:startColor="#7C3AED"
-        android:endColor="#06B6D4" />
-</shape>
+<!-- Send button: violet-cyan gradient oval with inner glow -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <gradient
+                android:type="linear"
+                android:angle="135"
+                android:startColor="#8B5CF6"
+                android:centerColor="#7C3AED"
+                android:endColor="#06B6D4" />
+        </shape>
+    </item>
+    <item
+        android:left="1dp"
+        android:right="1dp"
+        android:top="1dp"
+        android:bottom="1dp">
+        <shape android:shape="oval">
+            <stroke
+                android:width="0.5dp"
+                android:color="#33FFFFFF" />
+        </shape>
+    </item>
+</layer-list>
