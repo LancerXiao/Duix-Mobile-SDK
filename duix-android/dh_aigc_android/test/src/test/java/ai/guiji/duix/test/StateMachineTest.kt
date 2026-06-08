@@ -142,7 +142,7 @@ class StateMachineTest {
 
     @Test
     fun `any state to IDLE is always legal`() {
-        val states = PipelineSelfTest.CallState.entries.filter { it != PipelineSelfTest.CallState.IDLE }
+        val states = PipelineSelfTest.CallState.values().filter { it != PipelineSelfTest.CallState.IDLE }
         for (state in states) {
             lastAlert = null
             monitor.onStateChanged(state)
@@ -224,14 +224,14 @@ class StateMachineTest {
     @Test
     fun `CallState has all expected values`() {
         val expected = setOf("IDLE", "LISTENING", "THINKING", "SPEAKING")
-        val actual = PipelineSelfTest.CallState.entries.map { it.name }.toSet()
+        val actual = PipelineSelfTest.CallState.values().map { it.name }.toSet()
         assertEquals(expected, actual)
     }
 
     @Test
     fun `TestMode has TEXT_ONLY and WITH_ASR`() {
         val expected = setOf("TEXT_ONLY", "WITH_ASR", "TTS_ENGINE_STRESS", "RAPID_MULTI_ROUND")
-        val actual = PipelineSelfTest.TestMode.entries.map { it.name }.toSet()
+        val actual = PipelineSelfTest.TestMode.values().map { it.name }.toSet()
         assertEquals(expected, actual)
     }
 
@@ -328,7 +328,7 @@ class StateMachineTest {
             "STATE_STUCK", "STATE_ILLEGAL_TRANSITION", "TTS_PIPELINE_BROKEN",
             "NETWORK_UNAVAILABLE", "DUIX_SDK_NOT_READY", "TTS_ENGINE_NOT_READY"
         )
-        val actual = PipelineHealthMonitor.AlertType.entries.map { it.name }.toSet()
+        val actual = PipelineHealthMonitor.AlertType.values().map { it.name }.toSet()
         assertEquals(expected, actual)
     }
 

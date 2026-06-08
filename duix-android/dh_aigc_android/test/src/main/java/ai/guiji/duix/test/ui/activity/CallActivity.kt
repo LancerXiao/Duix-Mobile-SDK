@@ -2337,7 +2337,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
     override fun switchTtsEngineForTest(round: Int) {
         // TTS 引擎压力测试：轮流切换引擎
-        val engines = TtsEngine.entries
+        val engines = TtsEngine.values()
         val targetEngine = engines[(round - 1) % engines.size]
         if (currentTtsEngine != targetEngine) {
             currentTtsEngine = targetEngine
