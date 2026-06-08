@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 工具栏：毛玻璃深色 + 底部细分隔线 -->
+<!-- 工具栏：毛玻璃深蓝青色 + 底部细分隔线 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#CC0A0A1A" />
+            <solid android:color="#CC0F1523" />
         </shape>
     </item>
     <item
         android:gravity="bottom">
         <shape android:shape="rectangle">
             <size android:height="0.5dp" />
-            <solid android:color="#1AFFFFFF" />
+            <solid android:color="#1A00D4FF" />
         </shape>
     </item>
 </layer-list>

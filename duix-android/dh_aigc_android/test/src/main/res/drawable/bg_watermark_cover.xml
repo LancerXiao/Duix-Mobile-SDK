@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 数字人底部渐变：过渡到水印遮盖层颜色 -->
+<!-- 水印遮盖层：从半透明到深色的渐变，不是纯黑 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <gradient
         android:type="linear"
         android:angle="90"
-        android:startColor="#00000000"
-        android:centerColor="#4D0F1523"
-        android:endColor="#CC0F1523" />
+        android:startColor="#990A0A1A"
+        android:endColor="#F20A0A1A" />
 </shape>

@@ -65,6 +65,28 @@ public class AudioPlayer {
         mPlayQueue.clear();
         waitNextBuffer.clear();
         waitNextBuffer.position(0);
+        // [Bug fix] 每次 pushStart 时重新启动 AudioTrack 和 PlaybackThread
+        // 否则 stopPush() → pushDone() → PlaybackThread 退出后，
+        // 后续 pushStart 无法恢复播放
+        try {
+            if (audioTrack != null) {
+                audioTrack.stop();
+                audioTrack.play();
+            }
+        } catch (Exception e) {
+            Logger.e("pushStart: audioTrack.play() failed: " + e.getMessage());
+        }
+        if (playbackThread != null) {
+            playbackThread.stopPlay();
+            try {
+                playbackThread.join(100);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            playbackThread = null;
+        }
+        playbackThread = new PlaybackThread();
+        playbackThread.start();
     }
 
     public void pushData(ByteBuffer data){

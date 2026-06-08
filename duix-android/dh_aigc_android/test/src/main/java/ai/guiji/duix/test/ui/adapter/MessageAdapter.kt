@@ -44,7 +44,8 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
     fun updateLast(message: MessageData) {
         if (messages.isNotEmpty()) {
             messages[messages.size - 1] = message
-            notifyItemChanged(messages.size - 1)
+            // [Bug fix] 使用 payload 通知局部更新，避免整行重绑导致闪烁
+            notifyItemChanged(messages.size - 1, "text_update")
         }
     }
 
@@ -80,9 +81,36 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
         val lastAiIndex = messages.indexOfLast { it.role == MessageData.Role.AI && !it.isThinking }
         val isLastAi = (position == lastAiIndex)
         holder.bind(messages[position], isLastAi)
-        holder.itemView.startAnimation(
-            AnimationUtils.loadAnimation(holder.itemView.context, R.anim.fade_in_up)
-        )
+        // [Bug fix] 只对新插入的 item 播放入场动画，updateLast 时不重复播放
+        // 避免字幕闪烁跳动
+    }
+
+    override fun onBindViewHolder(holder: MessageViewHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isEmpty()) {
+            // 没有 payload，走完整绑定
+            onBindViewHolder(holder, position)
+        } else {
+            // 有 payload（局部更新），只更新文本，不重播动画
+            val message = messages[position]
+            val tvText: TextView = holder.itemView.findViewById(R.id.tvMessageText)
+            val tvThinking: View? = holder.itemView.findViewById(R.id.tvThinking)
+            if (message.role == MessageData.Role.AI) {
+                MarkdownRenderer.renderInto(tvText, message.text)
+            } else {
+                tvText.text = message.text
+            }
+            // 思考中 → 非思考中 切换
+            if (tvThinking != null) {
+                val isThinking = message.isThinking
+                tvThinking.visibility = if (isThinking) View.VISIBLE else View.GONE
+                tvText.visibility = if (isThinking) View.GONE else View.VISIBLE
+                if (!isThinking) {
+                    holder.itemView.findViewById<View?>(R.id.dot1)?.clearAnimation()
+                    holder.itemView.findViewById<View?>(R.id.dot2)?.clearAnimation()
+                    holder.itemView.findViewById<View?>(R.id.dot3)?.clearAnimation()
+                }
+            }
+        }
     }
 
     override fun getItemCount(): Int = messages.size
