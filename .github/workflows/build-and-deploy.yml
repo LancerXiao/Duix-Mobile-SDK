@@ -49,6 +49,9 @@ jobs:
         working-directory: duix-android/dh_aigc_android
         run: chmod +x gradlew
 
+      - name: Debug - List TTS service files
+        run: find duix-android/dh_aigc_android/test/src/main/java -name "*TtsService.kt" -type f
+
       - name: Bump version
         id: bump_version
         working-directory: duix-android/dh_aigc_android
@@ -74,7 +77,7 @@ jobs:
 
       - name: Build Release APK
         working-directory: duix-android/dh_aigc_android
-        run: ./gradlew :test:assembleRelease --no-daemon
+        run: ./gradlew :test:assembleRelease --no-daemon --rerun-tasks
 
       - name: Extract version info
         id: version
