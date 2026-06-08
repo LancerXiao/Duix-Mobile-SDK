@@ -438,14 +438,14 @@
 
     </LinearLayout>
 
-    <!-- Loading overlay -->
+    <!-- Loading overlay - 品牌色渐变背景 -->
     <LinearLayout
         android:id="@+id/loadingOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:gravity="center"
-        android:background="#CC0A0A1A"
+        android:background="@drawable/bg_loading_overlay"
         android:visibility="visible"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -457,7 +457,7 @@
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:indeterminate="true"
-            android:indeterminateTint="@color/white" />
+            android:indeterminateTint="@color/primary" />
 
         <TextView
             android:id="@+id/tvLoadingStatus"
