@@ -16,6 +16,9 @@ import ai.guiji.duix.test.service.LlmService
 import ai.guiji.duix.test.service.Mp3ToPcmConverter
 import ai.guiji.duix.test.service.PcmResampler
 import ai.guiji.duix.test.service.QwenTtsService
+import ai.guiji.duix.test.service.PipelineHealthMonitor
+import ai.guiji.duix.test.service.PipelineSelfTest
+import ai.guiji.duix.test.service.TestHost
 import ai.guiji.duix.test.ui.MessageData
 import ai.guiji.duix.test.ui.adapter.MessageAdapter
 import ai.guiji.duix.test.util.PermissionManager
@@ -41,7 +44,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.bumptech.glide.Glide
 
-class CallActivity : BaseActivity() {
+class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost {
 
     companion object {
         const val GL_CONTEXT_VERSION = 2
@@ -117,8 +120,36 @@ class CallActivity : BaseActivity() {
 
     // 状态管理
     private var currentState = State.IDLE
-    private var isDuiXReady = false
+    private var _isDuiXReady = false
     private var isMuted = false
+
+    // [E2E自测] 状态监听器列表 + 自测引擎
+    private val stateListeners = mutableListOf<(PipelineSelfTest.CallState) -> Unit>()
+    private var pipelineSelfTest: PipelineSelfTest? = null
+    private var isSelfTestRunning = false
+
+    // [管线健康监控] 运行时状态卡死检测 + 自动恢复
+    private var healthMonitor: PipelineHealthMonitor? = null
+    private var stateEnterTimeMs = 0L
+
+    // [E2E自测] 状态变更通知：所有 currentState 赋值必须通过此方法
+    private fun setState(newState: State) {
+        val oldState = currentState
+        if (oldState == newState) return
+        currentState = newState
+        stateEnterTimeMs = System.currentTimeMillis()
+        Log.d(TAG, "[STATE] $oldState -> $newState")
+        // 通知自测引擎状态变化
+        val testState = when (newState) {
+            State.IDLE -> PipelineSelfTest.CallState.IDLE
+            State.LISTENING -> PipelineSelfTest.CallState.LISTENING
+            State.THINKING -> PipelineSelfTest.CallState.THINKING
+            State.SPEAKING -> PipelineSelfTest.CallState.SPEAKING
+        }
+        stateListeners.forEach { it(testState) }
+        // 通知健康监控
+        healthMonitor?.onStateChanged(testState)
+    }
     // 用户主动停止 ASR 的标记位，防止停止后迟到的 ASR 回调改变状态
     private var userStoppedAsr = false
     // 累积的 ASR partial 文本（VAD 未触发时保存）
@@ -150,7 +181,7 @@ class CallActivity : BaseActivity() {
     // 自动回到监听
     private val mainHandler = Handler(Looper.getMainLooper())
     private val autoListenRunnable = Runnable {
-        if (currentState == State.IDLE && isDuiXReady) {
+        if (currentState == State.IDLE && _isDuiXReady) {
             startListening()
         }
     }
@@ -159,7 +190,7 @@ class CallActivity : BaseActivity() {
     private val speakingTimeoutRunnable = Runnable {
         if (currentState == State.SPEAKING) {
             Log.w(TAG, "[BUG-FIX] SPEAKING 超时 ${SPEAKING_TIMEOUT_MS}ms，强制恢复 IDLE")
-            currentState = State.IDLE
+            setState(State.IDLE)
             updateStatus("就绪")
             updateUI()
             scheduleAutoListen()
@@ -179,7 +210,7 @@ class CallActivity : BaseActivity() {
     private val thinkingTimeoutRunnable = Runnable {
         if (currentState == State.THINKING) {
             Log.w(TAG, "[BUG-FIX] THINKING 超时 ${THINKING_TIMEOUT_MS}ms，强制恢复 IDLE")
-            currentState = State.IDLE
+            setState(State.IDLE)
             updateStatus("请求超时")
             updateUI()
             showAiBubble(thinking = false, text = "请求超时，请重试")
@@ -419,7 +450,7 @@ class CallActivity : BaseActivity() {
                 Constant.CALLBACK_EVENT_INIT_READY -> {
                     Log.i(TAG, "DUIX 初始化成功!")
                     mModelInfo = info as ModelInfo
-                    isDuiXReady = true
+                    _isDuiXReady = true
                     initOk()
                 }
                 Constant.CALLBACK_EVENT_INIT_ERROR -> {
@@ -463,7 +494,7 @@ class CallActivity : BaseActivity() {
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_START -> {
                     runOnUiThread {
                         Log.i(TAG, "AUDIO_PLAY_START: 数字人开始播放音频")
-                        currentState = State.SPEAKING
+                        setState(State.SPEAKING)
                         updateUI()
                     }
                 }
@@ -471,7 +502,7 @@ class CallActivity : BaseActivity() {
                     runOnUiThread {
                         Log.i(TAG, "AUDIO_PLAY_END: 数字人播放完成")
                         cancelSpeakingTimeout()
-                        currentState = State.IDLE
+                        setState(State.IDLE)
                         updateUI()
                         scheduleAutoListen()
                     }
@@ -481,7 +512,7 @@ class CallActivity : BaseActivity() {
                         Log.e(TAG, "AUDIO_PLAY_ERROR: 数字人播放出错: $msg")
                         cancelSpeakingTimeout()
                         updateStatus("播放出错")
-                        currentState = State.IDLE
+                        setState(State.IDLE)
                         updateUI()
                         scheduleAutoListen()
                     }
@@ -496,7 +527,7 @@ class CallActivity : BaseActivity() {
     private fun retryInit() {
         duix?.release()
         duix = null
-        isDuiXReady = false
+        _isDuiXReady = false
         initDuiX()
     }
 
@@ -504,7 +535,7 @@ class CallActivity : BaseActivity() {
         runOnUiThread {
             hideLoading()
             enableControls(true)
-            currentState = State.IDLE
+            setState(State.IDLE)
             updateStatus("就绪")
             updateUI()
             showToast("数字人已就绪")
@@ -516,6 +547,9 @@ class CallActivity : BaseActivity() {
             loadMicInteractionMode()
             // 清空 fallback 状态显示 (Phase 1.3 骨架)
             clearFallbackStatus()
+            // [管线健康监控] 启动运行时状态卡死检测
+            healthMonitor = PipelineHealthMonitor(this@CallActivity)
+            healthMonitor?.start()
             // [Phase 4.2 P1-2] 数字人主动开场白（800ms 延迟让 UI 先稳定）
             mainHandler.postDelayed({ playGreeting() }, 800L)
             // 初始化完成后自动开始监听，参考 Call Annie 即时响应设计
@@ -536,7 +570,7 @@ class CallActivity : BaseActivity() {
         messageAdapter.append(MessageData(MessageData.Role.AI, greeting))
         scrollMessagesToBottom()
         // 2) 状态切换到 SPEAKING
-        currentState = State.SPEAKING
+        setState(State.SPEAKING)
         updateStatus("打招呼中")
         updateUI()
         // 3) TTS 合成 + 播放
@@ -580,7 +614,7 @@ class CallActivity : BaseActivity() {
         // 按压视觉反馈：缩小到 0.92
         animateMicScale(0.92f, durationMs = 80L)
         // [DIAG] 麦克风按下：当前状态 + 交互模式
-        Log.i(TAG, "[DIAG] onMicButtonDown: currentState=$currentState, micMode=$micInteractionMode, isDuiXReady=$isDuiXReady, userStoppedAsr=$userStoppedAsr, lastPartialText='$lastPartialText'")
+        Log.i(TAG, "[DIAG] onMicButtonDown: currentState=$currentState, micMode=$micInteractionMode, isDuiXReady=$_isDuiXReady, userStoppedAsr=$userStoppedAsr, lastPartialText='$lastPartialText'")
         when (currentState) {
             State.SPEAKING -> {
                 // 正在说话 -> 打断
@@ -626,7 +660,7 @@ class CallActivity : BaseActivity() {
     }
 
     private fun startListening() {
-        if (!isDuiXReady || currentState == State.THINKING || currentState == State.SPEAKING) return
+        if (!_isDuiXReady || currentState == State.THINKING || currentState == State.SPEAKING) return
         requestPermission(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
     }
 
@@ -707,7 +741,7 @@ class CallActivity : BaseActivity() {
         Log.i(TAG, "[DIAG] doStartListening: 进入, currentState=$currentState, asrServiceInitialized=${::asrService.isInitialized}")
         if (currentState == State.LISTENING) return
         if (!::asrService.isInitialized) {
-            currentState = State.IDLE
+            setState(State.IDLE)
             updateStatus("语音识别未就绪")
             updateUI()
             return
@@ -718,7 +752,7 @@ class CallActivity : BaseActivity() {
         userStoppedAsr = false
         lastPartialText = ""
         handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
-        currentState = State.LISTENING
+        setState(State.LISTENING)
         updateStatus("聆听中...")
         updateUI()
 
@@ -765,7 +799,7 @@ class CallActivity : BaseActivity() {
                             updateStatus("识别完成")
                             sendToLlm(text)
                         } else {
-                            currentState = State.IDLE
+                            setState(State.IDLE)
                             updateStatus("未检测到语音")
                             updateUI()
                             scheduleAutoListen()
@@ -784,7 +818,7 @@ class CallActivity : BaseActivity() {
                             Log.i(TAG, "用户已主动停止，丢弃迟到的onError: $error")
                             return@runOnUiThread
                         }
-                        currentState = State.IDLE
+                        setState(State.IDLE)
                         updateStatus("识别出错: $error")
                         updateUI()
                         // [Phase 2.4] 用 banner 替代 Toast
@@ -804,7 +838,7 @@ class CallActivity : BaseActivity() {
             })
         } catch (e: Exception) {
             Log.e(TAG, "启动语音识别异常", e)
-            currentState = State.IDLE
+            setState(State.IDLE)
             updateStatus("启动识别失败")
             updateUI()
             scheduleAutoListen()
@@ -831,7 +865,7 @@ class CallActivity : BaseActivity() {
         val pendingText = lastPartialText
         lastPartialText = ""
         // 立即更新UI状态，否则按钮会一直显示红色脉冲和"松开结束"标签
-        currentState = State.IDLE
+        setState(State.IDLE)
         updateStatus("已停止")
         updateUI()
         cancelAutoListen()
@@ -880,7 +914,7 @@ class CallActivity : BaseActivity() {
             Log.w(TAG, "[BUG-FIX] invokeLlm: 当前状态=$currentState，跳过")
             return
         }
-        currentState = State.THINKING
+        setState(State.THINKING)
         updateStatus("思考中")
         updateUI()
         // [Bug fix] 启动 THINKING 超时保护
@@ -908,7 +942,7 @@ class CallActivity : BaseActivity() {
                         if (fullText.isNotEmpty()) {
                             synthesizeAndPlay(fullText)
                         } else {
-                            currentState = State.IDLE
+                            setState(State.IDLE)
                             updateStatus("就绪")
                             updateUI()
                             scheduleAutoListen()
@@ -920,7 +954,7 @@ class CallActivity : BaseActivity() {
                     Log.e(TAG, "[DIAG] LLM.onError: error='$error'")
                     runOnUiThread {
                         cancelThinkingTimeout()
-                        currentState = State.IDLE
+                        setState(State.IDLE)
                         updateStatus("请求出错: $error")
                         showAiBubble(thinking = false, text = "出错了: $error")
                         updateUI()
@@ -939,7 +973,7 @@ class CallActivity : BaseActivity() {
             })
         } catch (e: Exception) {
             Log.e(TAG, "[DIAG] LLM请求异常", e)
-            currentState = State.IDLE
+            setState(State.IDLE)
             updateStatus("请求出错")
             updateUI()
             scheduleAutoListen()
@@ -951,13 +985,13 @@ class CallActivity : BaseActivity() {
      * 优先使用 Edge TTS，失败时自动切换到 Android 原生 TTS
      */
     private fun synthesizeAndPlay(text: String) {
-        currentState = State.SPEAKING
+        setState(State.SPEAKING)
         updateUI()
         // [Bug fix] 启动 SPEAKING 超时保护
         scheduleSpeakingTimeout()
 
         val currentDuix = duix ?: run {
-            currentState = State.IDLE
+            setState(State.IDLE)
             updateUI()
             return
         }
@@ -1012,7 +1046,7 @@ class CallActivity : BaseActivity() {
                         } catch (e: Exception) {
                             Log.e(TAG, "Qwen TTS push 音频异常", e)
                             runOnUiThread {
-                                currentState = State.IDLE
+                                setState(State.IDLE)
                                 updateStatus("语音播放失败")
                                 updateUI()
                                 scheduleAutoListen()
@@ -1034,7 +1068,7 @@ class CallActivity : BaseActivity() {
                             mainHandler.postDelayed({
                                 if (currentState == State.SPEAKING) {
                                     cancelSpeakingTimeout()
-                                    currentState = State.IDLE
+                                    setState(State.IDLE)
                                     updateStatus("就绪")
                                     updateUI()
                                     scheduleAutoListen()
@@ -1111,7 +1145,7 @@ class CallActivity : BaseActivity() {
                                         mainHandler.postDelayed({
                                             if (currentState == State.SPEAKING) {
                                                 cancelSpeakingTimeout()
-                                                currentState = State.IDLE
+                                                setState(State.IDLE)
                                                 updateStatus("就绪")
                                                 updateUI()
                                                 scheduleAutoListen()
@@ -1184,7 +1218,7 @@ class CallActivity : BaseActivity() {
             Log.e(TAG, "Android TTS 未初始化，无法合成语音")
             runOnUiThread {
                 updateStatus("语音不可用")
-                currentState = State.IDLE
+                setState(State.IDLE)
                 updateUI()
                 scheduleAutoListen()
             }
@@ -1227,7 +1261,7 @@ class CallActivity : BaseActivity() {
                                 mainHandler.postDelayed({
                                     if (currentState == State.SPEAKING) {
                                         cancelSpeakingTimeout()
-                                        currentState = State.IDLE
+                                        setState(State.IDLE)
                                         updateStatus("就绪")
                                         updateUI()
                                         scheduleAutoListen()
@@ -1238,7 +1272,7 @@ class CallActivity : BaseActivity() {
                             Log.e(TAG, "Android TTS PCM推送异常", e)
                             runOnUiThread {
                                 updateStatus("播放失败")
-                                currentState = State.IDLE
+                                setState(State.IDLE)
                                 updateUI()
                                 scheduleAutoListen()
                             }
@@ -1254,7 +1288,7 @@ class CallActivity : BaseActivity() {
                     Log.e(TAG, "Android TTS 合成失败: $error")
                     runOnUiThread {
                         updateStatus("语音合成失败")
-                        currentState = State.IDLE
+                        setState(State.IDLE)
                         updateUI()
                         scheduleAutoListen()
                     }
@@ -1264,7 +1298,7 @@ class CallActivity : BaseActivity() {
             Log.e(TAG, "Android TTS调用异常", e)
             runOnUiThread {
                 updateStatus("语音合成失败")
-                currentState = State.IDLE
+                setState(State.IDLE)
                 updateUI()
                 scheduleAutoListen()
             }
@@ -1294,7 +1328,7 @@ class CallActivity : BaseActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "停止DUIX音频异常", e)
         }
-        currentState = State.IDLE
+        setState(State.IDLE)
         updateStatus("就绪")
         updateUI()
         cancelAutoListen()
@@ -1463,8 +1497,8 @@ class CallActivity : BaseActivity() {
     }
 
     private fun updateUI() {
-        val micEnabled = isDuiXReady && currentState != State.THINKING
-        val sendEnabled = isDuiXReady && currentState == State.IDLE
+        val micEnabled = _isDuiXReady && currentState != State.THINKING
+        val sendEnabled = _isDuiXReady && currentState == State.IDLE
 
         // 麦克风按钮
         binding.btnMic.isEnabled = micEnabled
@@ -1491,7 +1525,7 @@ class CallActivity : BaseActivity() {
         binding.tvInterruptHint.visibility = if (currentState == State.SPEAKING) View.VISIBLE else View.GONE
 
         // 底部状态图标 (Phase 2.3 加大可视权重)
-        binding.stateIndicatorRow.visibility = if (isDuiXReady) View.VISIBLE else View.GONE
+        binding.stateIndicatorRow.visibility = if (_isDuiXReady) View.VISIBLE else View.GONE
         when (currentState) {
             State.IDLE -> {
                 binding.ivStateIcon.setImageResource(R.drawable.ic_mic)
@@ -1713,7 +1747,7 @@ class CallActivity : BaseActivity() {
             // 2) 清空 LLM 上下文
             try { llmService.clearHistory() } catch (e: Exception) { Log.e(TAG, "清空LLM历史失败", e) }
             // 3) 重置状态机
-            currentState = State.IDLE
+            setState(State.IDLE)
             // 4) 加一条系统消息提示
             val sysMsg = MessageData(
                 role = MessageData.Role.SYSTEM,
@@ -1728,7 +1762,7 @@ class CallActivity : BaseActivity() {
             scrollMessagesToBottom()
             // 7) 自动重新进入监听（如已就绪）
             cancelAutoListen()
-            if (isDuiXReady) {
+            if (_isDuiXReady) {
                 scheduleAutoListen()
             }
             Log.i(TAG, "[DIAG] startNewChat 完成")
@@ -1970,6 +2004,14 @@ class CallActivity : BaseActivity() {
         val tvEngineInfo = dialogView.findViewById<TextView>(R.id.tvEngineInfo)
         tvEngineInfo.text = "当前: ASR=${getAsrEngineDisplayName(currentAsrEngine)} | TTS=${getTtsEngineDisplayName(currentTtsEngine)}"
 
+        // [E2E自测] 端到端自测按钮
+        val btnSelfTest = dialogView.findViewById<TextView>(R.id.btnSelfTest)
+        btnSelfTest.setOnClickListener {
+            performHapticFeedback()
+            dialog.dismiss()
+            startPipelineSelfTest(3)
+        }
+
         // 关闭按钮
         dialogView.findViewById<ImageView>(R.id.btnCloseSettings).setOnClickListener {
             dialog.dismiss()
@@ -2195,6 +2237,12 @@ class CallActivity : BaseActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // 停止自测
+        pipelineSelfTest?.stop()
+        pipelineSelfTest = null
+        // 停止健康监控
+        healthMonitor?.stop()
+        healthMonitor = null
         cancelAutoListen()
         cancelSpeakingTimeout()
         cancelThinkingTimeout()
@@ -2217,6 +2265,143 @@ class CallActivity : BaseActivity() {
             duix?.release()
         } catch (e: Exception) {
             Log.e(TAG, "释放DUIX异常", e)
+        }
+    }
+
+    // ========== [E2E自测] TestHost 接口实现 ==========
+
+    override fun getCallState(): PipelineSelfTest.CallState = when (currentState) {
+        State.IDLE -> PipelineSelfTest.CallState.IDLE
+        State.LISTENING -> PipelineSelfTest.CallState.LISTENING
+        State.THINKING -> PipelineSelfTest.CallState.THINKING
+        State.SPEAKING -> PipelineSelfTest.CallState.SPEAKING
+    }
+
+    override fun simulateUserInput(text: String) {
+        runOnUiThread { sendToLlm(text) }
+    }
+
+    override fun isDuiXReady(): Boolean = _isDuiXReady
+
+    override fun currentTtsEngineName(): String = getTtsEngineDisplayName(currentTtsEngine)
+
+    override fun addStateListener(listener: (PipelineSelfTest.CallState) -> Unit) {
+        stateListeners.add(listener)
+    }
+
+    override fun removeStateListener(listener: (PipelineSelfTest.CallState) -> Unit) {
+        stateListeners.remove(listener)
+    }
+
+    override fun onTestLog(message: String) {
+        Log.i(TAG, "[SELF-TEST] $message")
+        runOnUiThread {
+            showErrorBanner("[自测] $message", 4000)
+        }
+    }
+
+    override fun onTestComplete(results: List<PipelineSelfTest.RoundResult>, summary: String) {
+        isSelfTestRunning = false
+        Log.i(TAG, "[SELF-TEST] $summary")
+        runOnUiThread {
+            // 显示测试结果对话框
+            showSelfTestResultDialog(results, summary)
+        }
+    }
+
+    /**
+     * [E2E自测] 启动管线端到端自测
+     * 自动模拟用户输入 → LLM → TTS → 数字人 → 验证状态恢复
+     */
+    private fun startPipelineSelfTest(rounds: Int = 3) {
+        if (isSelfTestRunning) {
+            showToast("自测已在运行中")
+            return
+        }
+        if (!_isDuiXReady) {
+            showToast("数字人未就绪，无法自测")
+            return
+        }
+        isSelfTestRunning = true
+        // 取消自动监听，避免干扰自测
+        cancelAutoListen()
+        pipelineSelfTest = PipelineSelfTest(this)
+        pipelineSelfTest?.start(rounds)
+        showToast("自测开始: $rounds 轮对话")
+    }
+
+    /**
+     * [E2E自测] 显示自测结果对话框
+     */
+    @SuppressLint("SetTextI18n")
+    private fun showSelfTestResultDialog(results: List<PipelineSelfTest.RoundResult>, summary: String) {
+        try {
+            val passed = results.count { it.llmSuccess && it.ttsSuccess && it.stateRecovery }
+            val failed = results.size - passed
+            val title = if (failed == 0) "自测全部通过" else "自测完成 (${failed}项失败)"
+
+            val message = buildString {
+                results.forEach { r ->
+                    val icon = if (r.llmSuccess && r.ttsSuccess && r.stateRecovery) "✓" else "✗"
+                    append("$icon 第${r.round}轮: ${r.durationMs}ms")
+                    if (!r.llmSuccess) append(" [LLM失败]")
+                    if (!r.ttsSuccess) append(" [TTS失败]")
+                    if (!r.stateRecovery) append(" [状态未恢复]")
+                    r.errorDetail?.let { append(" - $it") }
+                    append("\n")
+                }
+                append("\n$summary")
+            }
+
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton("确定", null)
+                .setCancelable(true)
+                .show()
+        } catch (e: Exception) {
+            Log.e(TAG, "showSelfTestResultDialog 异常", e)
+        }
+    }
+
+    // ========== [管线健康监控] HealthHost 接口实现 ==========
+
+    override fun getStateDurationMs(): Long {
+        return if (stateEnterTimeMs > 0) System.currentTimeMillis() - stateEnterTimeMs else 0L
+    }
+
+    override fun forceRecoverToIdle(reason: String) {
+        Log.w(TAG, "[HEALTH] 强制恢复 IDLE: $reason, 当前状态=$currentState")
+        runOnUiThread {
+            cancelSpeakingTimeout()
+            cancelThinkingTimeout()
+            cancelAutoListen()
+            // 停止所有 TTS
+            try { edgeTtsService.stop() } catch (_: Exception) {}
+            try { qwenTtsService.stop() } catch (_: Exception) {}
+            try { if (::androidTtsService.isInitialized) androidTtsService.stop() } catch (_: Exception) {}
+            try { duix?.stopAudio() } catch (_: Exception) {}
+            setState(State.IDLE)
+            updateStatus("已恢复: $reason")
+            updateUI()
+            scheduleAutoListen()
+        }
+    }
+
+    override fun onHealthAlert(alert: PipelineHealthMonitor.HealthAlert) {
+        Log.w(TAG, "[HEALTH-ALERT] ${alert.type}: ${alert.message}")
+        runOnUiThread {
+            when (alert.type) {
+                PipelineHealthMonitor.AlertType.STATE_STUCK -> {
+                    showErrorBanner("状态卡死已自动恢复: ${alert.state}", 5000)
+                }
+                PipelineHealthMonitor.AlertType.STATE_ILLEGAL_TRANSITION -> {
+                    showErrorBanner("状态异常: ${alert.message}", 4000)
+                }
+                PipelineHealthMonitor.AlertType.TTS_PIPELINE_BROKEN -> {
+                    showErrorBanner("TTS管线异常: ${alert.message}", 5000)
+                }
+            }
         }
     }
 }

@@ -15,8 +15,8 @@ android {
         applicationId "ai.guiji.duix.test"
         minSdk 24
         targetSdk 34
-        versionCode 40
-        versionName '4.4.40'
+        versionCode 41
+        versionName '4.4.41'
     }
 
     signingConfigs {
@@ -93,4 +93,7 @@ dependencies {
 
     implementation project(":duix-sdk")
     implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+
+    // 单元测试
+    testImplementation 'junit:junit:4.13.2'
 }

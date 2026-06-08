@@ -109,4 +109,35 @@
         android:textColor="#77FFFFFF"
         android:textSize="11sp" />
 
+    <!-- 分隔线 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="12dp"
+        android:background="#1AFFFFFF" />
+
+    <!-- 端到端自测按钮 -->
+    <TextView
+        android:id="@+id/btnSelfTest"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:gravity="center"
+        android:text="端到端自测 (3轮)"
+        android:textColor="@color/primary"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:background="@drawable/bg_engine_chip"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:gravity="center"
+        android:text="自动模拟用户对话，验证全链路稳定性"
+        android:textColor="#55FFFFFF"
+        android:textSize="10sp" />
+
 </LinearLayout>
