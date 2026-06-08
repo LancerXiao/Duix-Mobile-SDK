@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPEAKING 状态脉冲动画：品牌色脉冲环扩散 -->
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+    <alpha
+        android:duration="1200"
+        android:fromAlpha="0.8"
+        android:toAlpha="0.0"
+        android:repeatMode="restart"
+        android:repeatCount="infinite" />
+    <scale
+        android:duration="1200"
+        android:fromXScale="1.0"
+        android:fromYScale="1.0"
+        android:toXScale="1.8"
+        android:toYScale="1.8"
+        android:pivotX="50%"
+        android:pivotY="50%"
+        android:repeatMode="restart"
+        android:repeatCount="infinite" />
+</set>

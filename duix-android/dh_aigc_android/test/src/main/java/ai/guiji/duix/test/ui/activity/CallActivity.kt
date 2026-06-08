@@ -601,7 +601,32 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             mainHandler.postDelayed({ playGreeting() }, 800L)
             // 初始化完成后自动开始监听，参考 Call Annie 即时响应设计
             scheduleAutoListen()
+            // [E2E自测] 启动时自动运行一轮快速自测（5s 后，等 greeting 播完）
+            runStartupSelfTest()
         }
+    }
+
+    /**
+     * [E2E自测] 启动时自动运行一轮快速自测
+     * 在 greeting 播放完成后（5s 延迟）自动运行 TEXT_ONLY 模式 1 轮
+     * 仅在首次启动时运行（通过 SharedPreferences 记录）
+     */
+    private fun runStartupSelfTest() {
+        val prefs = getSharedPreferences("pipeline_self_test", MODE_PRIVATE)
+        val lastTestTime = prefs.getLong("last_test_time", 0L)
+        val timeSinceLastTest = System.currentTimeMillis() - lastTestTime
+        // 距离上次自测超过 10 分钟才自动运行（避免频繁自测）
+        if (timeSinceLastTest < 10 * 60 * 1000L) {
+            Log.i(TAG, "[SELF-TEST] 距上次自测仅 ${timeSinceLastTest / 1000}s，跳过启动自测")
+            return
+        }
+        mainHandler.postDelayed({
+            if (currentState == State.IDLE && _isDuiXReady && pipelineSelfTest == null) {
+                Log.i(TAG, "[SELF-TEST] 启动自动自测: TEXT_ONLY 1轮")
+                pipelineSelfTest = PipelineSelfTest(this)
+                pipelineSelfTest?.start(rounds = 1, mode = PipelineSelfTest.TestMode.TEXT_ONLY)
+            }
+        }, 5000L)
     }
 
     /**
@@ -1612,9 +1637,15 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     getDrawable(R.drawable.bg_mic_recording)
                 }
                 State.SPEAKING -> {
-                    binding.recordingPulseOuter.visibility = View.GONE
-                    binding.recordingPulseInner.visibility = View.GONE
-                    binding.recordingPulseOuter.clearAnimation()
+                    binding.recordingPulseOuter.visibility = View.VISIBLE
+                    binding.recordingPulseInner.visibility = View.VISIBLE
+                    try {
+                        binding.recordingPulseOuter.startAnimation(
+                            AnimationUtils.loadAnimation(this, R.anim.pulse_speaking)
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "加载播放动画失败", e)
+                    }
                     getDrawable(R.drawable.bg_mic_recording)
                 }
                 else -> {
@@ -2091,6 +2122,14 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             startPipelineSelfTest(5, PipelineSelfTest.TestMode.RAPID_MULTI_ROUND)
         }
 
+        // [E2E自测] 自测记录按钮
+        val btnSelfTestHistory = dialogView.findViewById<TextView>(R.id.btnSelfTestHistory)
+        btnSelfTestHistory.setOnClickListener {
+            performHapticFeedback()
+            dialog.dismiss()
+            showSelfTestHistory()
+        }
+
         // 关闭按钮
         dialogView.findViewById<ImageView>(R.id.btnCloseSettings).setOnClickListener {
             dialog.dismiss()
@@ -2558,6 +2597,63 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 .show()
         } catch (e: Exception) {
             Log.e(TAG, "showSelfTestResultDialog 异常", e)
+        }
+    }
+
+    /**
+     * [E2E自测] 显示自测历史记录
+     * 从 SharedPreferences 读取历史自测结果
+     */
+    @SuppressLint("SetTextI18n")
+    private fun showSelfTestHistory() {
+        try {
+            val prefs = getSharedPreferences("pipeline_self_test", MODE_PRIVATE)
+            val lastTestTime = prefs.getLong("last_test_time", 0L)
+            val total = prefs.getInt("last_test_total", 0)
+            val passed = prefs.getInt("last_test_passed", 0)
+            val failed = prefs.getInt("last_test_failed", 0)
+            val autoFixAttempts = prefs.getInt("last_test_auto_fix_attempts", 0)
+            val autoFixSuccesses = prefs.getInt("last_test_auto_fix_successes", 0)
+            val mode = prefs.getString("last_test_mode", "UNKNOWN")
+            val summary = prefs.getString("last_test_summary", "")
+
+            if (lastTestTime == 0L) {
+                showToast("暂无自测记录")
+                return
+            }
+
+            val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.CHINA)
+                .format(java.util.Date(lastTestTime))
+            val healthScore = healthMonitor?.getHealthScore()
+            val scoreStr = healthScore?.let { "健康评分: ${it.score}/100" } ?: ""
+            val issuesStr = healthScore?.let {
+                if (it.issues.isNotEmpty()) "\n当前问题: ${it.issues.joinToString(", ")}" else ""
+            } ?: ""
+
+            val message = buildString {
+                append("最近自测: $timeStr\n")
+                append("模式: $mode\n")
+                append("结果: $passed/$total 通过, $failed 失败\n")
+                if (autoFixAttempts > 0) {
+                    append("自动修复: $autoFixAttempts 次尝试, $autoFixSuccesses 次成功\n")
+                }
+                if (scoreStr.isNotEmpty()) append("\n$scoreStr$issuesStr")
+                if (!summary.isNullOrEmpty()) append("\n\n--- 详细 ---\n$summary")
+            }
+
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("自测记录")
+                .setMessage(message)
+                .setPositiveButton("确定", null)
+                .setNeutralButton("清除记录") { _, _ ->
+                    prefs.edit().clear().apply()
+                    showToast("自测记录已清除")
+                }
+                .setCancelable(true)
+                .show()
+        } catch (e: Exception) {
+            Log.e(TAG, "showSelfTestHistory 异常", e)
+            showToast("读取自测记录失败")
         }
     }
 
