@@ -39,8 +39,8 @@ class PipelineSelfTest(private val host: TestHost) {
         )
     }
 
-    /** 测试模式：纯文本输入 or 模拟 ASR 语音输入 */
-    enum class TestMode { TEXT_ONLY, WITH_ASR }
+    /** 测试模式：纯文本输入 or 模拟 ASR 语音输入 or TTS 引擎压力测试 */
+    enum class TestMode { TEXT_ONLY, WITH_ASR, TTS_ENGINE_STRESS, RAPID_MULTI_ROUND }
 
     enum class CallState { IDLE, LISTENING, THINKING, SPEAKING }
 
@@ -211,6 +211,27 @@ class PipelineSelfTest(private val host: TestHost) {
                     }
                 }, ASR_LISTEN_TIMEOUT_MS + LLM_RESPONSE_TIMEOUT_MS)
             }
+            TestMode.TTS_ENGINE_STRESS -> {
+                // TTS 引擎压力测试：每轮切换 TTS 引擎，验证 fallback 机制
+                host.switchTtsEngineForTest(currentRound)
+                host.simulateUserInput(input)
+                handler.postDelayed({
+                    if (!llmReturnedText && isRunning) {
+                        roundError = "LLM 响应超时 ${LLM_RESPONSE_TIMEOUT_MS}ms"
+                        logRound("[TIMEOUT] LLM 响应超时")
+                    }
+                }, LLM_RESPONSE_TIMEOUT_MS)
+            }
+            TestMode.RAPID_MULTI_ROUND -> {
+                // 快速多轮测试：减少间隔时间，验证状态机不会卡死
+                host.simulateUserInput(input)
+                handler.postDelayed({
+                    if (!llmReturnedText && isRunning) {
+                        roundError = "LLM 响应超时 ${LLM_RESPONSE_TIMEOUT_MS}ms"
+                        logRound("[TIMEOUT] LLM 响应超时")
+                    }
+                }, LLM_RESPONSE_TIMEOUT_MS)
+            }
         }
     }
 
@@ -271,7 +292,8 @@ class PipelineSelfTest(private val host: TestHost) {
                     )
 
                     if (isRunning) {
-                        handler.postDelayed({ runNextRound() }, ROUND_DELAY_MS)
+                        val delay = if (testMode == TestMode.RAPID_MULTI_ROUND) 500L else ROUND_DELAY_MS
+                        handler.postDelayed({ runNextRound() }, delay)
                     }
                 }
             }
@@ -376,6 +398,8 @@ interface TestHost {
     fun simulateUserInput(text: String)
     /** 模拟 ASR 语音输入：启动录音并注入识别结果 */
     fun simulateAsrInput(text: String)
+    /** TTS 引擎压力测试：根据轮次切换 TTS 引擎 */
+    fun switchTtsEngineForTest(round: Int)
     /** 是否就绪（DUIX 已初始化完成） */
     fun isDuiXReady(): Boolean
     /** 当前 TTS 引擎名 */

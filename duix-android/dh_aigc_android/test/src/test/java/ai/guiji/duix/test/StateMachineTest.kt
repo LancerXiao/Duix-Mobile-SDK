@@ -230,7 +230,7 @@ class StateMachineTest {
 
     @Test
     fun `TestMode has TEXT_ONLY and WITH_ASR`() {
-        val expected = setOf("TEXT_ONLY", "WITH_ASR")
+        val expected = setOf("TEXT_ONLY", "WITH_ASR", "TTS_ENGINE_STRESS", "RAPID_MULTI_ROUND")
         val actual = PipelineSelfTest.TestMode.entries.map { it.name }.toSet()
         assertEquals(expected, actual)
     }

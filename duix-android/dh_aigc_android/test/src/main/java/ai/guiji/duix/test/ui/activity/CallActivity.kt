@@ -2020,6 +2020,22 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             startPipelineSelfTest(3, PipelineSelfTest.TestMode.WITH_ASR)
         }
 
+        // [E2E自测] TTS 引擎压力测试按钮
+        val btnSelfTestTtsStress = dialogView.findViewById<TextView>(R.id.btnSelfTestTtsStress)
+        btnSelfTestTtsStress.setOnClickListener {
+            performHapticFeedback()
+            dialog.dismiss()
+            startPipelineSelfTest(3, PipelineSelfTest.TestMode.TTS_ENGINE_STRESS)
+        }
+
+        // [E2E自测] 快速多轮测试按钮
+        val btnSelfTestRapid = dialogView.findViewById<TextView>(R.id.btnSelfTestRapid)
+        btnSelfTestRapid.setOnClickListener {
+            performHapticFeedback()
+            dialog.dismiss()
+            startPipelineSelfTest(5, PipelineSelfTest.TestMode.RAPID_MULTI_ROUND)
+        }
+
         // 关闭按钮
         dialogView.findViewById<ImageView>(R.id.btnCloseSettings).setOnClickListener {
             dialog.dismiss()
@@ -2318,6 +2334,18 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     }
 
     override fun isDuiXReady(): Boolean = _isDuiXReady
+
+    override fun switchTtsEngineForTest(round: Int) {
+        // TTS 引擎压力测试：轮流切换引擎
+        val engines = TtsEngine.entries
+        val targetEngine = engines[(round - 1) % engines.size]
+        if (currentTtsEngine != targetEngine) {
+            currentTtsEngine = targetEngine
+            saveTtsEnginePreference(targetEngine)
+            Log.i(TAG, "[SELF-TEST] 切换 TTS 引擎到: ${getTtsEngineDisplayName(targetEngine)}")
+            showErrorBanner("TTS 切换: ${getTtsEngineDisplayName(targetEngine)}", 2000)
+        }
+    }
 
     override fun currentTtsEngineName(): String = getTtsEngineDisplayName(currentTtsEngine)
 
