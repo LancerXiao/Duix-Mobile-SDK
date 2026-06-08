@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [P2-A] 涟漪缩放+淡出动画 200ms -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:fillAfter="false"
+    android:interpolator="@android:anim/decelerate_interpolator">
+
+    <scale
+        android:duration="200"
+        android:fromXScale="0.4"
+        android:fromYScale="0.4"
+        android:pivotX="50%"
+        android:pivotY="50%"
+        android:toXScale="2.4"
+        android:toYScale="2.4" />
+
+    <alpha
+        android:duration="200"
+        android:fromAlpha="0.85"
+        android:toAlpha="0.0" />
+
+</set>

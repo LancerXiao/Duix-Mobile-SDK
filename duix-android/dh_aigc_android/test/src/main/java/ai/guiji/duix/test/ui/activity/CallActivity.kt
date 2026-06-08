@@ -293,12 +293,17 @@ class CallActivity : BaseActivity() {
             true
         }
 
-        // 点击数字人区域中断说话
-        binding.tapOverlay.setOnClickListener {
-            if (currentState == State.SPEAKING) {
-                stopSpeaking()
-                performHapticFeedback()
+        // 点击数字人区域中断说话（带点击位置涟漪动画）
+        binding.tapOverlay.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_UP) {
+                if (currentState == State.SPEAKING) {
+                    stopSpeaking()
+                    performHapticFeedback()
+                    // [P2-A] 在手指抬起位置显示涟漪
+                    showTapRipple(event.rawX.toInt(), event.rawY.toInt())
+                }
             }
+            false
         }
 
         // 文本输入发送
@@ -1202,6 +1207,48 @@ class CallActivity : BaseActivity() {
         cancelAutoListen()
     }
 
+    /**
+     * [P2-A] 在 (x, y) 屏幕坐标处显示 60dp 圆形涟漪并 200ms 内淡出放大
+     * 把屏幕坐标转为 ivTapRipple 父容器 (tapOverlay) 内的局部坐标后
+     * 用 ConstraintLayout.LayoutParams 重新定位中心
+     */
+    private fun showTapRipple(screenX: Int, screenY: Int) {
+        try {
+            val ripple = binding.ivTapRipple
+            val parent = ripple.parent as? android.view.ViewGroup ?: return
+            val location = IntArray(2)
+            parent.getLocationOnScreen(location)
+            val localX = (screenX - location[0]) - ripple.width / 2
+            val localY = (screenY - location[1]) - ripple.height / 2
+            val lp = ripple.layoutParams as androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
+            lp.leftToLeft = androidx.constraintlayout.widget.ConstraintLayout.PARENT_ID
+            lp.topToTop = androidx.constraintlayout.widget.ConstraintLayout.PARENT_ID
+            lp.rightToRight = androidx.constraintlayout.widget.ConstraintLayout.PARENT_ID
+            lp.bottomToBottom = androidx.constraintlayout.widget.ConstraintLayout.PARENT_ID
+            lp.leftMargin = localX
+            lp.topMargin = localY
+            lp.rightMargin = 0
+            lp.bottomMargin = 0
+            ripple.layoutParams = lp
+            // 取消之前的动画（避免快速点击重叠）
+            ripple.clearAnimation()
+            ripple.alpha = 0.85f
+            ripple.visibility = View.VISIBLE
+            val anim = AnimationUtils.loadAnimation(this, R.anim.tap_ripple_expand)
+            anim.setAnimationListener(object : android.view.animation.Animation.AnimationListener {
+                override fun onAnimationStart(a: android.view.animation.Animation?) {}
+                override fun onAnimationRepeat(a: android.view.animation.Animation?) {}
+                override fun onAnimationEnd(a: android.view.animation.Animation?) {
+                    ripple.visibility = View.GONE
+                    ripple.alpha = 0f
+                }
+            })
+            ripple.startAnimation(anim)
+        } catch (e: Exception) {
+            Log.e(TAG, "showTapRipple 异常", e)
+        }
+    }
+
     // --- UI 更新 ---
 
     @SuppressLint("SetTextI18n")
@@ -1415,8 +1462,51 @@ class CallActivity : BaseActivity() {
                     getDrawable(R.drawable.bg_mic_button)
                 }
             }
+            // [P2-A] 状态切换时按钮 scale 弹性反馈，让 IDLE ↔ LISTENING/SPEAKING 切换有视觉过渡
+            animateStateTransition()
         } catch (e: Exception) {
             Log.e(TAG, "更新麦克风按钮背景失败", e)
+        }
+    }
+
+    private var lastUiState: State? = null
+
+    /**
+     * [P2-A] 状态切换时给 btnMic 做 220ms 弹性缩放（1.0 → 1.15 → 1.0），
+     * 让"按下/松口/打断/思考"这些状态变化有可感知的物理反馈。
+     * 仅在状态真的发生变化时才触发动画，避免 updateUI 反复调用时闪烁。
+     */
+    private fun animateStateTransition() {
+        if (lastUiState == currentState) return
+        val prev = lastUiState
+        lastUiState = currentState
+        try {
+            val btn = binding.btnMic
+            // 第一次初始化不弹跳
+            if (prev == null) return
+            // THINKING / IDLE 切换不放大幅度（避免太跳）
+            val scale = if (currentState == State.LISTENING || currentState == State.SPEAKING) 1.18f else 1.10f
+            val anim = android.view.animation.AnimationSet(true).apply {
+                interpolator = android.view.animation.OvershootInterpolator(1.8f)
+            }
+            val s1 = android.view.animation.ScaleAnimation(
+                1.0f, scale, 1.0f, scale,
+                android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f,
+                android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f
+            ).apply { duration = 120 }
+            val s2 = android.view.animation.ScaleAnimation(
+                scale, 1.0f, scale, 1.0f,
+                android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f,
+                android.view.animation.Animation.RELATIVE_TO_SELF, 0.5f
+            ).apply {
+                duration = 140
+                startOffset = 120
+            }
+            anim.addAnimation(s1)
+            anim.addAnimation(s2)
+            btn.startAnimation(anim)
+        } catch (e: Exception) {
+            Log.e(TAG, "animateStateTransition 异常", e)
         }
     }
 

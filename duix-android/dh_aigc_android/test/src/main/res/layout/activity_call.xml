@@ -28,6 +28,19 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <!-- [P2-A] 点击数字人打断时的涟漪圆点：60dp 圆形，淡出+放大 200ms -->
+    <View
+        android:id="@+id/ivTapRipple"
+        android:layout_width="60dp"
+        android:layout_height="60dp"
+        android:background="@drawable/bg_tap_ripple"
+        android:visibility="gone"
+        android:alpha="0"
+        app:layout_constraintTop_toTopOf="@+id/tapOverlay"
+        app:layout_constraintBottom_toBottomOf="@+id/tapOverlay"
+        app:layout_constraintStart_toStartOf="@+id/tapOverlay"
+        app:layout_constraintEnd_toEndOf="@+id/tapOverlay" />
+
     <!-- 打断提示 (Phase 2.5) - SPEAKING 时显示在数字人上方 -->
     <TextView
         android:id="@+id/tvInterruptHint"
