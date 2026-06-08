@@ -142,45 +142,17 @@
             android:textSize="15sp"
             android:textStyle="bold" />
 
-        <!-- ASR 引擎指示器 -->
-        <TextView
-            android:id="@+id/tvAsrEngine"
-            android:layout_width="wrap_content"
-            android:layout_height="24dp"
-            android:minWidth="44dp"
-            android:gravity="center"
-            android:background="@drawable/bg_tts_engine_selector"
-            android:foreground="?attr/selectableItemBackground"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:text="Dash"
-            android:textColor="#DDFFFFFF"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="点击切换ASR引擎"
-            android:layout_marginEnd="4dp" />
-
-        <!-- TTS引擎指示器 -->
-        <TextView
-            android:id="@+id/tvTtsEngine"
-            android:layout_width="wrap_content"
-            android:layout_height="24dp"
-            android:minWidth="44dp"
-            android:gravity="center"
-            android:background="@drawable/bg_tts_engine_selector"
-            android:foreground="?attr/selectableItemBackground"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:text="Qwen"
-            android:textColor="#DDFFFFFF"
-            android:textSize="10sp"
-            android:textStyle="bold"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="点击切换TTS引擎"
-            android:layout_marginEnd="4dp" />
+        <!-- 设置按钮：点击弹出 ASR/TTS 设置弹窗 -->
+        <ImageView
+            android:id="@+id/btnSettings"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:padding="7dp"
+            android:src="@drawable/ic_settings"
+            android:contentDescription="设置"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            app:tint="@color/white"
+            android:layout_marginEnd="2dp" />
 
         <!-- Mute button -->
         <ImageView

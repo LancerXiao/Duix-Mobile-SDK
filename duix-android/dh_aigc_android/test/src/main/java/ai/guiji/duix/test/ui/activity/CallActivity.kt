@@ -36,6 +36,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.animation.AnimationUtils
 import android.view.inputmethod.EditorInfo
+import android.widget.ImageView
+import android.widget.TextView
 import android.widget.Toast
 import com.bumptech.glide.Glide
 
@@ -48,7 +50,7 @@ class CallActivity : BaseActivity() {
         private const val STABLE_TEXT_TIMEOUT_MS = 1500L
         // [Bug fix] SPEAKING 状态超时保护：如果 DUIX SDK 没有回调 AUDIO_PLAY_END，
         // 15 秒后自动恢复到 IDLE，防止状态卡死
-        private const val SPEAKING_TIMEOUT_MS = 15000L
+        private const val SPEAKING_TIMEOUT_MS = 8000L
         // [Bug fix] THINKING 状态超时保护：如果 LLM 请求挂起无响应，
         // 30 秒后自动恢复到 IDLE，防止状态永远卡在 THINKING
         private const val THINKING_TIMEOUT_MS = 30000L
@@ -88,7 +90,7 @@ class CallActivity : BaseActivity() {
     // TTS引擎选择
     private enum class TtsEngine { QWEN_TTS, EDGE_TTS, ANDROID_TTS }
     private val ttsEngineCycle = listOf(TtsEngine.QWEN_TTS, TtsEngine.EDGE_TTS, TtsEngine.ANDROID_TTS)
-    private var currentTtsEngine = TtsEngine.QWEN_TTS
+    private var currentTtsEngine = TtsEngine.EDGE_TTS
     private var edgeTtsFailCount = 0
 
     // ASR 引擎选择 (Phase 1.2 骨架) - 顶部可见+可点击循环切换+持久化
@@ -327,14 +329,9 @@ class CallActivity : BaseActivity() {
             showToast("已取消静音")
         }
 
-        // TTS 引擎选择 - 点击循环切换 Qwen TTS → Edge TTS → Android TTS → Qwen TTS
-        binding.tvTtsEngine.setOnClickListener {
-            cycleTtsEngine()
-        }
-
-        // ASR 引擎选择 (Phase 1.2 骨架) - 点击循环切换 DashScope → Android → Disabled
-        binding.tvAsrEngine.setOnClickListener {
-            cycleAsrEngine()
+        // 设置按钮 - 点击弹出 ASR/TTS 引擎设置弹窗
+        binding.btnSettings.setOnClickListener {
+            showEngineSettingsDialog()
         }
 
         // 麦克风按钮 - 长按说话
@@ -1032,16 +1029,30 @@ class CallActivity : BaseActivity() {
                         } catch (e: Throwable) {
                             Log.e(TAG, "stopPush 异常", e)
                         }
+                        // [Bug fix] TTS 完成后延迟恢复 IDLE，不依赖 AUDIO_PLAY_END
+                        runOnUiThread {
+                            mainHandler.postDelayed({
+                                if (currentState == State.SPEAKING) {
+                                    cancelSpeakingTimeout()
+                                    currentState = State.IDLE
+                                    updateStatus("就绪")
+                                    updateUI()
+                                    scheduleAutoListen()
+                                }
+                            }, 1500L) // 给数字人 1.5s 播放完最后的音频
+                        }
                     }.start()
                 }
 
                 override fun onError(error: String) {
                     Log.e(TAG, "Qwen TTS 错误: $error, fallback 到 Edge TTS")
                     runOnUiThread {
-                        // fallback 到 Edge TTS
+                        cancelSpeakingTimeout() // 取消当前超时，重新开始
                         currentTtsEngine = TtsEngine.EDGE_TTS
-                        showErrorBanner("Qwen TTS 失败，切换到 Edge TTS: $error", 3000)
+                        showErrorBanner("Qwen TTS 失败，切换到 Edge TTS", 3000)
                         updateUI()
+                        // 重新启动 SPEAKING 超时
+                        scheduleSpeakingTimeout()
                         synthesizeWithEdgeTts(text, currentDuix)
                     }
                 }
@@ -1095,8 +1106,17 @@ class CallActivity : BaseActivity() {
                                         Log.e(TAG, "stopPush异常", e)
                                     }
                                     edgeTtsFailCount = 0
+                                    // [Bug fix] TTS 完成后延迟恢复 IDLE，不依赖 AUDIO_PLAY_END
                                     runOnUiThread {
-                                        updateStatus("播放中")
+                                        mainHandler.postDelayed({
+                                            if (currentState == State.SPEAKING) {
+                                                cancelSpeakingTimeout()
+                                                currentState = State.IDLE
+                                                updateStatus("就绪")
+                                                updateUI()
+                                                scheduleAutoListen()
+                                            }
+                                        }, 1500L)
                                     }
                                 }
 
@@ -1129,24 +1149,22 @@ class CallActivity : BaseActivity() {
 
                 override fun onComplete() {
                     Log.i(TAG, "Edge TTS 合成完成")
+                    // PCM 推送和 IDLE 恢复在内部 onComplete 中处理
                 }
 
                 override fun onError(error: String) {
                     Log.e(TAG, "Edge TTS 合成失败: $error")
                     edgeTtsFailCount++
-                    if (edgeTtsFailCount >= 2) {
-                        Log.i(TAG, "Edge TTS 连续失败 $edgeTtsFailCount 次，切换到Android TTS")
-                        runOnUiThread {
-                            updateStatus("切换语音引擎")
+                    runOnUiThread {
+                        cancelSpeakingTimeout() // 取消当前超时，重新开始
+                        if (edgeTtsFailCount >= 2) {
+                            Log.i(TAG, "Edge TTS 连续失败 $edgeTtsFailCount 次，切换到Android TTS")
                             currentTtsEngine = TtsEngine.ANDROID_TTS
                             updateUI()
-                            synthesizeWithAndroidTts(text, currentDuix)
                         }
-                    } else {
-                        runOnUiThread {
-                            updateStatus("切换语音引擎")
-                            synthesizeWithAndroidTts(text, currentDuix)
-                        }
+                        // 重新启动 SPEAKING 超时
+                        scheduleSpeakingTimeout()
+                        synthesizeWithAndroidTts(text, currentDuix)
                     }
                 }
             })
@@ -1204,8 +1222,17 @@ class CallActivity : BaseActivity() {
                             } catch (e: Exception) {
                                 Log.e(TAG, "stopPush异常", e)
                             }
+                            // [Bug fix] TTS 完成后延迟恢复 IDLE，不依赖 AUDIO_PLAY_END
                             runOnUiThread {
-                                updateStatus("播放中")
+                                mainHandler.postDelayed({
+                                    if (currentState == State.SPEAKING) {
+                                        cancelSpeakingTimeout()
+                                        currentState = State.IDLE
+                                        updateStatus("就绪")
+                                        updateUI()
+                                        scheduleAutoListen()
+                                    }
+                                }, 1500L)
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Android TTS PCM推送异常", e)
@@ -1450,19 +1477,7 @@ class CallActivity : BaseActivity() {
         // 输入框
         binding.etInput.isEnabled = sendEnabled
 
-        // TTS引擎指示器
-        binding.tvTtsEngine.text = when (currentTtsEngine) {
-            TtsEngine.QWEN_TTS -> "Qwen TTS"
-            TtsEngine.EDGE_TTS -> "Edge TTS"
-            TtsEngine.ANDROID_TTS -> "Android TTS"
-        }
-
-        // ASR引擎指示器 (Phase 1.2 骨架)
-        binding.tvAsrEngine.text = when (currentAsrEngine) {
-            AsrEngine.DASHSCOPE -> "Dash"
-            AsrEngine.ANDROID -> "Android"
-            AsrEngine.DISABLED -> "Off"
-        }
+        // 引擎信息（设置弹窗中使用，不再在 toolbar 显示）
 
         // 麦克风按钮标签
         binding.tvMicLabel.text = when (currentState) {
@@ -1881,6 +1896,89 @@ class CallActivity : BaseActivity() {
     }
 
     /**
+     * 显示 ASR/TTS 引擎设置底部弹窗
+     */
+    private fun showEngineSettingsDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_engine_settings, null)
+        val dialog = android.app.Dialog(this, R.style.dialog_center)
+        dialog.setContentView(dialogView)
+        dialog.window?.setLayout(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        dialog.window?.setGravity(android.view.Gravity.BOTTOM)
+        dialog.window?.setWindowAnimations(android.R.style.Animation_InputMethod)
+
+        // ASR 引擎按钮
+        val btnAsrDash = dialogView.findViewById<TextView>(R.id.btnAsrDashscope)
+        val btnAsrAndroid = dialogView.findViewById<TextView>(R.id.btnAsrAndroid)
+        val asrButtons = listOf(btnAsrDash, btnAsrAndroid)
+
+        fun updateAsrSelection() {
+            btnAsrDash.isActivated = (currentAsrEngine == AsrEngine.DASHSCOPE)
+            btnAsrAndroid.isActivated = (currentAsrEngine == AsrEngine.ANDROID)
+        }
+        updateAsrSelection()
+
+        btnAsrDash.setOnClickListener {
+            currentAsrEngine = AsrEngine.DASHSCOPE
+            saveAsrEnginePreference(AsrEngine.DASHSCOPE)
+            updateAsrSelection()
+            performHapticFeedback()
+        }
+        btnAsrAndroid.setOnClickListener {
+            currentAsrEngine = AsrEngine.ANDROID
+            saveAsrEnginePreference(AsrEngine.ANDROID)
+            updateAsrSelection()
+            performHapticFeedback()
+        }
+
+        // TTS 引擎按钮
+        val btnTtsEdge = dialogView.findViewById<TextView>(R.id.btnTtsEdge)
+        val btnTtsQwen = dialogView.findViewById<TextView>(R.id.btnTtsQwen)
+        val btnTtsAndroid = dialogView.findViewById<TextView>(R.id.btnTtsAndroid)
+        val ttsButtons = listOf(btnTtsEdge, btnTtsQwen, btnTtsAndroid)
+
+        fun updateTtsSelection() {
+            btnTtsEdge.isActivated = (currentTtsEngine == TtsEngine.EDGE_TTS)
+            btnTtsQwen.isActivated = (currentTtsEngine == TtsEngine.QWEN_TTS)
+            btnTtsAndroid.isActivated = (currentTtsEngine == TtsEngine.ANDROID_TTS)
+        }
+        updateTtsSelection()
+
+        btnTtsEdge.setOnClickListener {
+            currentTtsEngine = TtsEngine.EDGE_TTS
+            edgeTtsFailCount = 0
+            saveTtsEnginePreference(TtsEngine.EDGE_TTS)
+            updateTtsSelection()
+            performHapticFeedback()
+        }
+        btnTtsQwen.setOnClickListener {
+            currentTtsEngine = TtsEngine.QWEN_TTS
+            saveTtsEnginePreference(TtsEngine.QWEN_TTS)
+            updateTtsSelection()
+            performHapticFeedback()
+        }
+        btnTtsAndroid.setOnClickListener {
+            currentTtsEngine = TtsEngine.ANDROID_TTS
+            saveTtsEnginePreference(TtsEngine.ANDROID_TTS)
+            updateTtsSelection()
+            performHapticFeedback()
+        }
+
+        // 引擎信息
+        val tvEngineInfo = dialogView.findViewById<TextView>(R.id.tvEngineInfo)
+        tvEngineInfo.text = "当前: ASR=${getAsrEngineDisplayName(currentAsrEngine)} | TTS=${getTtsEngineDisplayName(currentTtsEngine)}"
+
+        // 关闭按钮
+        dialogView.findViewById<ImageView>(R.id.btnCloseSettings).setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dialog.show()
+    }
+
+    /**
      * 循环切换 TTS 引擎：Qwen TTS → Edge TTS → Android TTS → Qwen TTS
      * 并把选择持久化到 SharedPreferences
      */
@@ -1917,8 +2015,8 @@ class CallActivity : BaseActivity() {
     private fun loadTtsEnginePreference() {
         try {
             val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val name = prefs.getString(KEY_TTS_ENGINE, TtsEngine.QWEN_TTS.name)
-            val loaded = try { TtsEngine.valueOf(name!!) } catch (e: Exception) { TtsEngine.QWEN_TTS }
+            val name = prefs.getString(KEY_TTS_ENGINE, TtsEngine.EDGE_TTS.name)
+            val loaded = try { TtsEngine.valueOf(name!!) } catch (e: Exception) { TtsEngine.EDGE_TTS }
             if (loaded != currentTtsEngine) {
                 Log.i(TAG, "恢复 TTS 引擎偏好: $name")
                 currentTtsEngine = loaded

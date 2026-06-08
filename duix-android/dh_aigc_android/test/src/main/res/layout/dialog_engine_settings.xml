@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ASR/TTS 引擎设置底部弹窗 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_bottom_panel"
+    android:paddingStart="20dp"
+    android:paddingEnd="20dp"
+    android:paddingTop="20dp"
+    android:paddingBottom="28dp">
+
+    <!-- 标题行 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="语音引擎设置"
+            android:textColor="@color/white"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:id="@+id/btnCloseSettings"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:padding="6dp"
+            android:src="@drawable/ic_close_white"
+            android:contentDescription="关闭"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            app:tint="@color/white"
+            xmlns:app="http://schemas.android.com/apk/res-auto" />
+
+    </LinearLayout>
+
+    <!-- ASR 引擎选择 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="语音识别 (ASR)"
+        android:textColor="#99FFFFFF"
+        android:textSize="12sp"
+        android:layout_marginBottom="8dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:id="@+id/btnAsrDashscope"
+            style="@style/EngineChip"
+            android:text="DashScope" />
+
+        <TextView
+            android:id="@+id/btnAsrAndroid"
+            style="@style/EngineChip"
+            android:text="Android" />
+
+    </LinearLayout>
+
+    <!-- TTS 引擎选择 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="语音合成 (TTS)"
+        android:textColor="#99FFFFFF"
+        android:textSize="12sp"
+        android:layout_marginBottom="8dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/btnTtsEdge"
+            style="@style/EngineChip"
+            android:text="Edge TTS" />
+
+        <TextView
+            android:id="@+id/btnTtsQwen"
+            style="@style/EngineChip"
+            android:text="Qwen TTS" />
+
+        <TextView
+            android:id="@+id/btnTtsAndroid"
+            style="@style/EngineChip"
+            android:text="Android" />
+
+    </LinearLayout>
+
+    <!-- 当前选择提示 -->
+    <TextView
+        android:id="@+id/tvEngineInfo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center"
+        android:text=""
+        android:textColor="#77FFFFFF"
+        android:textSize="11sp" />
+
+</LinearLayout>

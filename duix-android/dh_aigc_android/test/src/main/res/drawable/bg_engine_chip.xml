@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 引擎选择 chip：未选中状态 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 选中状态：蓝青品牌色 -->
+    <item android:state_activated="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#3300D4FF" />
+            <stroke android:width="1dp" android:color="#00D4FF" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+    <!-- 未选中状态：半透明深色 -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#1AFFFFFF" />
+            <stroke android:width="0.5dp" android:color="#22FFFFFF" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+</selector>
