@@ -2,6 +2,8 @@ package ai.guiji.duix.test.service
 
 import android.util.Log
 import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -27,9 +29,6 @@ class MimoTtsService {
 
     companion object {
         private const val TAG = "MimoTtsService"
-        private const val BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
-        private const val MODEL = "mimo-v2.5-tts"
-        private const val DEFAULT_VOICE = "白桦"  // 中文男声，成熟大叔
         private const val AUDIO_FORMAT = "pcm16"
         private const val MAX_RETRIES = 2
         private const val RETRY_DELAY_MS = 800L
@@ -59,7 +58,7 @@ class MimoTtsService {
      * @param voice 音色，默认 白桦（中文男声，成熟大叔）
      * @param callback 回调
      */
-    fun synthesize(text: String, voice: String = DEFAULT_VOICE, callback: Callback) {
+    fun synthesize(text: String, voice: String = AiConfig.MIMO_TTS_DEFAULT_VOICE, callback: Callback) {
         if (text.isBlank()) {
             callback.onError("文本为空")
             return
@@ -78,7 +77,7 @@ class MimoTtsService {
 
         // 构建请求体
         val requestBody = JSONObject().apply {
-            put("model", MODEL)
+            put("model", AiConfig.MIMO_TTS_MODEL)
             put("messages", org.json.JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "assistant")
@@ -92,14 +91,14 @@ class MimoTtsService {
         }
 
         val request = Request.Builder()
-            .url(BASE_URL)
+            .url(AiConfig.MIMO_TTS_BASE_URL)
             .addHeader("Authorization", "Bearer ${AiConfig.MIMO_API_KEY}")
             .addHeader("Content-Type", "application/json")
-            .post(RequestBody.create(MediaType.parse("application/json"), requestBody.toString()))
+            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
         currentCall = client.newCall(request)
-        currentCall!!.enqueue(object : Callback {
+        currentCall!!.enqueue(object : okhttp3.Callback {
             override fun onFailure(call: Call, e: IOException) {
                 Log.e(TAG, "MiMo TTS 请求失败 (attempt ${retryCount + 1}): ${e.message}", e)
                 handleError("请求失败: ${e.message ?: "未知"}", callback, retryCount, text, voice)

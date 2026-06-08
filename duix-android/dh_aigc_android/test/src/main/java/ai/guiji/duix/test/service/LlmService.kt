@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * LLM服务 - 使用Agnes AI的agnes-2.0-flash模型
+ * LLM服务 - 支持 Agnes AI 和 MiMo 等多引擎
  * 支持流式SSE输出
  */
 class LlmService {
@@ -32,6 +32,11 @@ class LlmService {
     private val messages = JSONArray()
     private val isRequesting = AtomicBoolean(false)
 
+    // 当前 LLM 引擎配置
+    var baseUrl: String = AiConfig.LLM_BASE_URL
+    var apiKey: String = AiConfig.AGNES_AI_API_KEY
+    var model: String = AiConfig.LLM_MODEL
+
     interface Callback {
         fun onToken(token: String)
         fun onComplete(fullText: String)
@@ -45,12 +50,22 @@ class LlmService {
         messages.put(systemMsg)
     }
 
+    /**
+     * 切换 LLM 引擎
+     */
+    fun switchEngine(baseUrl: String, apiKey: String, model: String) {
+        this.baseUrl = baseUrl
+        this.apiKey = apiKey
+        this.model = model
+        Log.i(TAG, "LLM 引擎切换: model=$model, baseUrl=$baseUrl")
+    }
+
     fun chat(userMessage: String, callback: Callback) {
         if (!isRequesting.compareAndSet(false, true)) {
             callback.onError("正在请求中，请稍候")
             return
         }
-        Log.i(TAG, "[DIAG] LLM.chat: text='${userMessage.take(50)}', url=${AiConfig.LLM_BASE_URL}/chat/completions, model=${AiConfig.LLM_MODEL}, keyPrefix=${AiConfig.AGNES_AI_API_KEY.take(8)}...")
+        Log.i(TAG, "[DIAG] LLM.chat: text='${userMessage.take(50)}', url=$baseUrl/chat/completions, model=$model, keyPrefix=${apiKey.take(8)}...")
         chatWithRetry(userMessage, callback, 0)
     }
 
@@ -64,7 +79,7 @@ class LlmService {
         }
 
         val requestBody = JSONObject()
-        requestBody.put("model", AiConfig.LLM_MODEL)
+        requestBody.put("model", model)
         requestBody.put("messages", messages)
         requestBody.put("stream", true)
         requestBody.put("max_tokens", 512)
@@ -74,8 +89,8 @@ class LlmService {
             .toRequestBody("application/json".toMediaType())
 
         val request = Request.Builder()
-            .url("${AiConfig.LLM_BASE_URL}/chat/completions")
-            .addHeader("Authorization", "Bearer ${AiConfig.AGNES_AI_API_KEY}")
+            .url("$baseUrl/chat/completions")
+            .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
             .post(body)
             .build()

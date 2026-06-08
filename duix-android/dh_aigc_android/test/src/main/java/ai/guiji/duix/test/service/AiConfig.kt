@@ -18,17 +18,25 @@ object AiConfig {
     // 注意：model 通过 URL 查询参数传递，不再放在 payload 里
     const val TTS_WS_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime?model=qwen3-tts-flash-realtime"
     const val TTS_MODEL = "qwen3-tts-flash-realtime"
-    const val TTS_DEFAULT_VOICE = "Cherry"  // 中文女声
+    const val TTS_DEFAULT_VOICE = "Ethan"  // 中文男声 - 晨煦：阳光温暖活力朝气
 
     // TTS - MiMo (小米 mimo-v2.5-tts)
     // OpenAI 兼容的 Chat Completions 格式，REST API 非流式
-    const val MIMO_API_KEY = ""  // 小米 MiMo API Key，需填入
+    const val MIMO_API_KEY = "tp-cujq11e705x6k837werg4kyhnhen7fhy2ilo2yl7d91v01og"
+    const val MIMO_TTS_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
+    const val MIMO_TTS_MODEL = "mimo-v2.5-tts"
+    const val MIMO_TTS_DEFAULT_VOICE = "白桦"  // 中文男声 - 成熟大叔
 
     // LLM - Agnes AI (agnes-2.0-flash)
     // 独立 API key，因为百炼 key 不能调普通 LLM 模型（Model.AccessDenied）
     const val AGNES_AI_API_KEY = "sk-TuKWa0JQb9nGiUc7d6goWxpRzhUGfRpALI1DASAf1qOIXNCs"
     const val LLM_BASE_URL = "https://apihub.agnes-ai.com/v1"
     const val LLM_MODEL = "agnes-2.0-flash"
+
+    // LLM - MiMo (小米 mimo-v2.5)
+    const val MIMO_LLM_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
+    const val MIMO_LLM_MODEL = "mimo-v2.5"
+
     const val LLM_SYSTEM_PROMPT = "你是一个友好的数字人助手，名叫小杜。请用简洁、自然的口语风格回答问题，每次回答不超过100字。不要使用markdown格式，用纯文本回答。"
 
     // 数字人模型下载URL

@@ -65,6 +65,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         // SharedPreferences
         private const val PREFS_NAME = "duix_prefs"
         private const val KEY_TTS_ENGINE = "tts_engine"
+        private const val KEY_LLM_ENGINE = "llm_engine"
         private const val KEY_ASR_ENGINE = "asr_engine"
         private const val KEY_MIC_INTERACTION_MODE = "mic_interaction_mode"
     }
@@ -86,13 +87,19 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     private val llmService = LlmService()
     private lateinit var asrService: HybridAsrService
     private val qwenTtsService = QwenTtsService()
+    private val mimoTtsService = MimoTtsService()
     private val edgeTtsService = EdgeTtsService()
     private lateinit var androidTtsService: AndroidTtsService
     private lateinit var mp3ToPcmConverter: Mp3ToPcmConverter
 
+    // LLM引擎选择
+    private enum class LlmEngine { AGNES, MIMO }
+    private val llmEngineCycle = listOf(LlmEngine.AGNES, LlmEngine.MIMO)
+    private var currentLlmEngine = LlmEngine.MIMO
+
     // TTS引擎选择
-    private enum class TtsEngine { QWEN_TTS, EDGE_TTS, ANDROID_TTS }
-    private val ttsEngineCycle = listOf(TtsEngine.QWEN_TTS, TtsEngine.EDGE_TTS, TtsEngine.ANDROID_TTS)
+    private enum class TtsEngine { QWEN_TTS, MIMO_TTS, EDGE_TTS, ANDROID_TTS }
+    private val ttsEngineCycle = listOf(TtsEngine.QWEN_TTS, TtsEngine.MIMO_TTS, TtsEngine.EDGE_TTS, TtsEngine.ANDROID_TTS)
     private var currentTtsEngine = TtsEngine.QWEN_TTS
     private var edgeTtsFailCount = 0
 
@@ -588,6 +595,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             showToast("数字人已就绪")
             // 恢复上次保存的 TTS 引擎选择
             loadTtsEnginePreference()
+            // 恢复上次保存的 LLM 引擎选择
+            loadLlmEnginePreference()
             // 恢复上次保存的 ASR 引擎选择 (Phase 1.2 骨架)
             loadAsrEnginePreference()
             // 恢复上次保存的麦克风交互模式 (Phase 1.4 骨架)
@@ -1072,6 +1081,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 updateStatus("合成语音中")
                 synthesizeWithQwenTts(text, currentDuix)
             }
+            TtsEngine.MIMO_TTS -> {
+                updateStatus("合成语音中")
+                synthesizeWithMimoTts(text, currentDuix)
+            }
             TtsEngine.EDGE_TTS -> {
                 updateStatus("合成语音中")
                 synthesizeWithEdgeTts(text, currentDuix)
@@ -1150,15 +1163,15 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 }
 
                 override fun onError(error: String) {
-                    Log.e(TAG, "Qwen TTS 错误: $error, fallback 到 Edge TTS")
+                    Log.e(TAG, "Qwen TTS 错误: $error, fallback 到 MiMo TTS")
                     runOnUiThread {
                         cancelSpeakingTimeout()
-                        currentTtsEngine = TtsEngine.EDGE_TTS
-                        saveTtsEnginePreference(TtsEngine.EDGE_TTS)  // 保存 fallback 引擎
-                        showErrorBanner("Qwen TTS 失败，切换到 Edge TTS", 3000)
+                        currentTtsEngine = TtsEngine.MIMO_TTS
+                        saveTtsEnginePreference(TtsEngine.MIMO_TTS)
+                        showErrorBanner("Qwen TTS 失败，切换到 MiMo TTS", 3000)
                         updateUI()
                         scheduleSpeakingTimeout()
-                        synthesizeWithEdgeTts(text, currentDuix)
+                        synthesizeWithMimoTts(text, currentDuix)
                     }
                 }
             })
@@ -1166,9 +1179,95 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             Log.e(TAG, "Qwen TTS 启动异常", e)
             // fallback
             runOnUiThread {
-                currentTtsEngine = TtsEngine.EDGE_TTS
+                currentTtsEngine = TtsEngine.MIMO_TTS
                 updateUI()
-                synthesizeWithEdgeTts(text, currentDuix)
+                synthesizeWithMimoTts(text, currentDuix)
+            }
+        }
+    }
+
+    /**
+     * 使用 MiMo TTS (mimo-v2.5-tts) 合成语音
+     * 收到的是 PCM 16-bit 数据，需要确认采样率后重采样到 16kHz 推送给 DUIX
+     */
+    private fun synthesizeWithMimoTts(text: String, currentDuix: DUIX) {
+        Log.i(TAG, "尝试 MiMo TTS 合成: ${text.take(30)}...")
+        val pushedOnce = booleanArrayOf(false)
+        try {
+            mimoTtsService.synthesize(text, AiConfig.MIMO_TTS_DEFAULT_VOICE, object : MimoTtsService.Callback {
+                override fun onAudioData(pcmData: ByteArray) {
+                    // MiMo TTS pcm16 格式输出，假设 24kHz，重采样到 16kHz
+                    val resampledPcm = try {
+                        PcmResampler.resample(pcmData, QWEN_TTS_SAMPLE_RATE, DUIX_SAMPLE_RATE)
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "MiMo TTS PCM 重采样失败", e)
+                        pcmData
+                    }
+                    Log.i(TAG, "MiMo TTS 返回PCM: ${pcmData.size} bytes -> ${resampledPcm.size} bytes (16kHz)")
+                    Thread {
+                        try {
+                            if (!pushedOnce[0]) {
+                                currentDuix.startPush()
+                                pushedOnce[0] = true
+                            }
+                            try {
+                                currentDuix.pushPcm(resampledPcm)
+                            } catch (e: Throwable) {
+                                Log.e(TAG, "pushPcm 异常", e)
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "MiMo TTS push 音频异常", e)
+                            runOnUiThread {
+                                setState(State.IDLE)
+                                updateStatus("语音播放失败")
+                                updateUI()
+                                scheduleAutoListen()
+                            }
+                        }
+                    }.start()
+                }
+
+                override fun onComplete() {
+                    Log.i(TAG, "MiMo TTS 合成完成")
+                    Thread {
+                        try {
+                            currentDuix.stopPush()
+                        } catch (e: Throwable) {
+                            Log.e(TAG, "stopPush 异常", e)
+                        }
+                        runOnUiThread {
+                            mainHandler.postDelayed({
+                                if (currentState == State.SPEAKING) {
+                                    cancelSpeakingTimeout()
+                                    setState(State.IDLE)
+                                    updateStatus("就绪")
+                                    updateUI()
+                                    scheduleAutoListen()
+                                }
+                            }, 1500L)
+                        }
+                    }.start()
+                }
+
+                override fun onError(error: String) {
+                    Log.e(TAG, "MiMo TTS 错误: $error, fallback 到 Qwen TTS")
+                    runOnUiThread {
+                        cancelSpeakingTimeout()
+                        currentTtsEngine = TtsEngine.QWEN_TTS
+                        saveTtsEnginePreference(TtsEngine.QWEN_TTS)
+                        showErrorBanner("MiMo TTS 失败，切换到 Qwen TTS", 3000)
+                        updateUI()
+                        scheduleSpeakingTimeout()
+                        synthesizeWithQwenTts(text, currentDuix)
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "MiMo TTS 启动异常", e)
+            runOnUiThread {
+                currentTtsEngine = TtsEngine.QWEN_TTS
+                updateUI()
+                synthesizeWithQwenTts(text, currentDuix)
             }
         }
     }
@@ -2053,29 +2152,61 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             performHapticFeedback()
         }
 
+        // LLM 引擎按钮
+        val btnLlmAgnes = dialogView.findViewById<TextView>(R.id.btnLlmAgnes)
+        val btnLlmMimo = dialogView.findViewById<TextView>(R.id.btnLlmMimo)
+
+        fun updateLlmSelection() {
+            btnLlmAgnes.isActivated = (currentLlmEngine == LlmEngine.AGNES)
+            btnLlmMimo.isActivated = (currentLlmEngine == LlmEngine.MIMO)
+        }
+        updateLlmSelection()
+
+        btnLlmAgnes.setOnClickListener {
+            currentLlmEngine = LlmEngine.AGNES
+            llmService.switchEngine(AiConfig.LLM_BASE_URL, AiConfig.AGNES_AI_API_KEY, AiConfig.LLM_MODEL)
+            saveLlmEnginePreference(LlmEngine.AGNES)
+            updateLlmSelection()
+            performHapticFeedback()
+        }
+        btnLlmMimo.setOnClickListener {
+            currentLlmEngine = LlmEngine.MIMO
+            llmService.switchEngine(AiConfig.MIMO_LLM_BASE_URL, AiConfig.MIMO_API_KEY, AiConfig.MIMO_LLM_MODEL)
+            saveLlmEnginePreference(LlmEngine.MIMO)
+            updateLlmSelection()
+            performHapticFeedback()
+        }
+
         // TTS 引擎按钮
-        val btnTtsEdge = dialogView.findViewById<TextView>(R.id.btnTtsEdge)
         val btnTtsQwen = dialogView.findViewById<TextView>(R.id.btnTtsQwen)
+        val btnTtsMimo = dialogView.findViewById<TextView>(R.id.btnTtsMimo)
+        val btnTtsEdge = dialogView.findViewById<TextView>(R.id.btnTtsEdge)
         val btnTtsAndroid = dialogView.findViewById<TextView>(R.id.btnTtsAndroid)
-        val ttsButtons = listOf(btnTtsEdge, btnTtsQwen, btnTtsAndroid)
 
         fun updateTtsSelection() {
-            btnTtsEdge.isActivated = (currentTtsEngine == TtsEngine.EDGE_TTS)
             btnTtsQwen.isActivated = (currentTtsEngine == TtsEngine.QWEN_TTS)
+            btnTtsMimo.isActivated = (currentTtsEngine == TtsEngine.MIMO_TTS)
+            btnTtsEdge.isActivated = (currentTtsEngine == TtsEngine.EDGE_TTS)
             btnTtsAndroid.isActivated = (currentTtsEngine == TtsEngine.ANDROID_TTS)
         }
         updateTtsSelection()
 
+        btnTtsQwen.setOnClickListener {
+            currentTtsEngine = TtsEngine.QWEN_TTS
+            saveTtsEnginePreference(TtsEngine.QWEN_TTS)
+            updateTtsSelection()
+            performHapticFeedback()
+        }
+        btnTtsMimo.setOnClickListener {
+            currentTtsEngine = TtsEngine.MIMO_TTS
+            saveTtsEnginePreference(TtsEngine.MIMO_TTS)
+            updateTtsSelection()
+            performHapticFeedback()
+        }
         btnTtsEdge.setOnClickListener {
             currentTtsEngine = TtsEngine.EDGE_TTS
             edgeTtsFailCount = 0
             saveTtsEnginePreference(TtsEngine.EDGE_TTS)
-            updateTtsSelection()
-            performHapticFeedback()
-        }
-        btnTtsQwen.setOnClickListener {
-            currentTtsEngine = TtsEngine.QWEN_TTS
-            saveTtsEnginePreference(TtsEngine.QWEN_TTS)
             updateTtsSelection()
             performHapticFeedback()
         }
@@ -2088,7 +2219,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
         // 引擎信息
         val tvEngineInfo = dialogView.findViewById<TextView>(R.id.tvEngineInfo)
-        tvEngineInfo.text = "当前: ASR=${getAsrEngineDisplayName(currentAsrEngine)} | TTS=${getTtsEngineDisplayName(currentTtsEngine)}"
+        tvEngineInfo.text = "当前: LLM=${getLlmEngineDisplayName(currentLlmEngine)} | ASR=${getAsrEngineDisplayName(currentAsrEngine)} | TTS=${getTtsEngineDisplayName(currentTtsEngine)}"
 
         // [E2E自测] 端到端自测按钮
         val btnSelfTest = dialogView.findViewById<TextView>(R.id.btnSelfTest)
@@ -2158,8 +2289,14 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
     private fun getTtsEngineDisplayName(engine: TtsEngine): String = when (engine) {
         TtsEngine.QWEN_TTS -> "Qwen TTS"
+        TtsEngine.MIMO_TTS -> "MiMo TTS"
         TtsEngine.EDGE_TTS -> "Edge TTS"
         TtsEngine.ANDROID_TTS -> "Android TTS"
+    }
+
+    private fun getLlmEngineDisplayName(engine: LlmEngine): String = when (engine) {
+        LlmEngine.AGNES -> "Agnes"
+        LlmEngine.MIMO -> "MiMo"
     }
 
     private fun saveTtsEnginePreference(engine: TtsEngine) {
@@ -2184,6 +2321,35 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             }
         } catch (e: Exception) {
             Log.e(TAG, "加载 TTS 引擎偏好失败", e)
+        }
+    }
+
+    private fun saveLlmEnginePreference(engine: LlmEngine) {
+        try {
+            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_LLM_ENGINE, engine.name)
+                .apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "保存 LLM 引擎偏好失败", e)
+        }
+    }
+
+    private fun loadLlmEnginePreference() {
+        try {
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val name = prefs.getString(KEY_LLM_ENGINE, LlmEngine.MIMO.name)
+            val loaded = try { LlmEngine.valueOf(name!!) } catch (e: Exception) { LlmEngine.MIMO }
+            if (loaded != currentLlmEngine) {
+                Log.i(TAG, "恢复 LLM 引擎偏好: $name")
+                currentLlmEngine = loaded
+            }
+            // 同步 LlmService 引擎配置
+            when (currentLlmEngine) {
+                LlmEngine.AGNES -> llmService.switchEngine(AiConfig.LLM_BASE_URL, AiConfig.AGNES_AI_API_KEY, AiConfig.LLM_MODEL)
+                LlmEngine.MIMO -> llmService.switchEngine(AiConfig.MIMO_LLM_BASE_URL, AiConfig.MIMO_API_KEY, AiConfig.MIMO_LLM_MODEL)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "加载 LLM 引擎偏好失败", e)
         }
     }
 
@@ -2450,8 +2616,9 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             val nextIndex = (currentIndex + i) % engines.size
             val nextEngine = engines[nextIndex]
             val isReady = when (nextEngine) {
-                TtsEngine.EDGE_TTS -> true
                 TtsEngine.QWEN_TTS -> true
+                TtsEngine.MIMO_TTS -> true
+                TtsEngine.EDGE_TTS -> true
                 TtsEngine.ANDROID_TTS -> ::androidTtsService.isInitialized && androidTtsService.isReady()
             }
             if (isReady) {
@@ -2718,8 +2885,9 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     override fun isDuiXSdkReady(): Boolean = _isDuiXReady
 
     override fun isCurrentTtsEngineReady(): Boolean = when (currentTtsEngine) {
-        TtsEngine.EDGE_TTS -> true  // Edge TTS 无需初始化
-        TtsEngine.QWEN_TTS -> true  // Qwen TTS 无需初始化
+        TtsEngine.QWEN_TTS -> true
+        TtsEngine.MIMO_TTS -> true
+        TtsEngine.EDGE_TTS -> true
         TtsEngine.ANDROID_TTS -> ::androidTtsService.isInitialized && androidTtsService.isReady()
     }
 }
