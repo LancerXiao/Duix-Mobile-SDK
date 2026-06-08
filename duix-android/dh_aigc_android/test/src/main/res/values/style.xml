@@ -12,23 +12,23 @@
         <item name="android:backgroundDimEnabled">true</item>
     </style>
 
-    <!-- [Phase 4.3 P1-1] 快捷指令 chip 样式（豆包/Coze 风格） -->
+    <!-- 快捷指令 chip 样式 - 紧凑现代风格 -->
     <style name="QuickActionChip">
         <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">32dp</item>
-        <item name="android:layout_marginStart">6dp</item>
-        <item name="android:layout_marginEnd">6dp</item>
+        <item name="android:layout_height">28dp</item>
+        <item name="android:layout_marginStart">4dp</item>
+        <item name="android:layout_marginEnd">4dp</item>
         <item name="android:gravity">center</item>
-        <item name="android:paddingStart">14dp</item>
-        <item name="android:paddingEnd">14dp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
         <item name="android:background">@drawable/bg_quick_action_chip</item>
         <item name="android:foreground">?attr/selectableItemBackground</item>
-        <item name="android:textColor">#FFFFFFFF</item>
-        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">#DDFFFFFF</item>
+        <item name="android:textSize">11sp</item>
         <item name="android:textStyle">bold</item>
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
-        <item name="android:elevation">2dp</item>
+        <item name="android:elevation">1dp</item>
     </style>
 
 </resources>

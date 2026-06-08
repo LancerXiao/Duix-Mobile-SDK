@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- AI 消息气泡：磨砂半透黑 + 18dp 圆角（左下角 4dp 形成"指向用户"的暗示） -->
+<!-- AI 消息气泡：磨砂半透深色 + 16dp 圆角 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#CC1A1A2E" />
+    <solid android:color="#B31A1A2E" />
     <stroke
         android:width="0.5dp"
-        android:color="#22FFFFFF" />
+        android:color="#1AFFFFFF" />
     <corners
-        android:topLeftRadius="18dp"
-        android:topRightRadius="18dp"
+        android:topLeftRadius="16dp"
+        android:topRightRadius="16dp"
         android:bottomLeftRadius="4dp"
-        android:bottomRightRadius="18dp" />
+        android:bottomRightRadius="16dp" />
 </shape>

@@ -42,7 +42,7 @@ public abstract class BaseActivity extends AppCompatActivity implements Handler.
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-                getWindow().setStatusBarColor(0xFF5A52D5);
+                getWindow().setStatusBarColor(0xFF0099CC);
             }
         } catch (Exception e) {
             Log.w(TAG, "设置状态栏失败", e);

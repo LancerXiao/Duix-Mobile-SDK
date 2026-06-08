@@ -46,6 +46,12 @@ class CallActivity : BaseActivity() {
         private const val AUTO_LISTEN_DELAY_MS = 1200L
         // ASR partial 文字稳定超时（毫秒）：超过这个时间 partial 不变就认为说话结束
         private const val STABLE_TEXT_TIMEOUT_MS = 1500L
+        // [Bug fix] SPEAKING 状态超时保护：如果 DUIX SDK 没有回调 AUDIO_PLAY_END，
+        // 15 秒后自动恢复到 IDLE，防止状态卡死
+        private const val SPEAKING_TIMEOUT_MS = 15000L
+        // [Bug fix] THINKING 状态超时保护：如果 LLM 请求挂起无响应，
+        // 30 秒后自动恢复到 IDLE，防止状态永远卡在 THINKING
+        private const val THINKING_TIMEOUT_MS = 30000L
         // 音频采样率常量
         // Qwen TTS (qwen3-tts-flash-realtime) 固定输出 24kHz PCM
         private const val QWEN_TTS_SAMPLE_RATE = 24000
@@ -125,7 +131,7 @@ class CallActivity : BaseActivity() {
         val text = lastPartialText
         if (text.isEmpty()) return@Runnable
         Log.i(TAG, "ASR partial 文字稳定 ${STABLE_TEXT_TIMEOUT_MS}ms，自动触发onFinalResult: $text")
-        // 模拟 VAD 触发的 onFinalResult：标记用户已停止 + 停 ASR + 状态切到 THINKING
+        // 标记用户停止 + 停 ASR
         userStoppedAsr = true
         lastPartialText = ""
         try {
@@ -133,10 +139,9 @@ class CallActivity : BaseActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "autoFinalize: 停止ASR异常", e)
         }
-        currentState = State.THINKING
-        updateStatus("识别完成")
-        updateUI()
-        showAiBubble(thinking = true, text = "正在思考...")
+        // [Bug fix] 不在这里设置 THINKING 状态和显示气泡！
+        // sendToLlm → invokeLlm 会处理状态转换和 UI 更新
+        // 之前先设 THINKING 再调 sendToLlm，导致 sendToLlm 检查 THINKING 时直接 return
         sendToLlm(text)
     }
 
@@ -146,6 +151,47 @@ class CallActivity : BaseActivity() {
         if (currentState == State.IDLE && isDuiXReady) {
             startListening()
         }
+    }
+
+    // [Bug fix] SPEAKING 超时保护：DUIX SDK 不回调 AUDIO_PLAY_END 时自动恢复
+    private val speakingTimeoutRunnable = Runnable {
+        if (currentState == State.SPEAKING) {
+            Log.w(TAG, "[BUG-FIX] SPEAKING 超时 ${SPEAKING_TIMEOUT_MS}ms，强制恢复 IDLE")
+            currentState = State.IDLE
+            updateStatus("就绪")
+            updateUI()
+            scheduleAutoListen()
+        }
+    }
+
+    private fun scheduleSpeakingTimeout() {
+        cancelSpeakingTimeout()
+        mainHandler.postDelayed(speakingTimeoutRunnable, SPEAKING_TIMEOUT_MS)
+    }
+
+    private fun cancelSpeakingTimeout() {
+        mainHandler.removeCallbacks(speakingTimeoutRunnable)
+    }
+
+    // [Bug fix] THINKING 超时保护：LLM 请求挂起时自动恢复
+    private val thinkingTimeoutRunnable = Runnable {
+        if (currentState == State.THINKING) {
+            Log.w(TAG, "[BUG-FIX] THINKING 超时 ${THINKING_TIMEOUT_MS}ms，强制恢复 IDLE")
+            currentState = State.IDLE
+            updateStatus("请求超时")
+            updateUI()
+            showAiBubble(thinking = false, text = "请求超时，请重试")
+            scheduleAutoListen()
+        }
+    }
+
+    private fun scheduleThinkingTimeout() {
+        cancelThinkingTimeout()
+        mainHandler.postDelayed(thinkingTimeoutRunnable, THINKING_TIMEOUT_MS)
+    }
+
+    private fun cancelThinkingTimeout() {
+        mainHandler.removeCallbacks(thinkingTimeoutRunnable)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -427,6 +473,7 @@ class CallActivity : BaseActivity() {
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_END -> {
                     runOnUiThread {
                         Log.i(TAG, "AUDIO_PLAY_END: 数字人播放完成")
+                        cancelSpeakingTimeout()
                         currentState = State.IDLE
                         updateUI()
                         scheduleAutoListen()
@@ -435,6 +482,7 @@ class CallActivity : BaseActivity() {
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_ERROR -> {
                     runOnUiThread {
                         Log.e(TAG, "AUDIO_PLAY_ERROR: 数字人播放出错: $msg")
+                        cancelSpeakingTimeout()
                         updateStatus("播放出错")
                         currentState = State.IDLE
                         updateUI()
@@ -807,7 +855,8 @@ class CallActivity : BaseActivity() {
             return
         }
         Log.i(TAG, "[DIAG] sendToLlm: 发送文本到LLM, text='${text.take(50)}...'")
-        if (currentState == State.THINKING) return
+        // [Bug fix] SPEAKING 时也不允许新请求，避免添加 USER 消息却无 AI 回复
+        if (currentState == State.THINKING || currentState == State.SPEAKING) return
 
         // 检查网络连接
         if (!isNetworkAvailable()) {
@@ -829,9 +878,16 @@ class CallActivity : BaseActivity() {
      * sendToLlm 和 regenerateLastAi 共用此核心调用
      */
     private fun invokeLlm(text: String) {
+        // 防护：SPEAKING/THINKING 时不允许新请求
+        if (currentState == State.THINKING || currentState == State.SPEAKING) {
+            Log.w(TAG, "[BUG-FIX] invokeLlm: 当前状态=$currentState，跳过")
+            return
+        }
         currentState = State.THINKING
         updateStatus("思考中")
         updateUI()
+        // [Bug fix] 启动 THINKING 超时保护
+        scheduleThinkingTimeout()
 
         showAiBubble(thinking = true, text = "")
 
@@ -850,6 +906,7 @@ class CallActivity : BaseActivity() {
                 override fun onComplete(fullText: String) {
                     Log.i(TAG, "[DIAG] LLM.onComplete: fullText长度=${fullText.length}, fullText='${fullText.take(50)}...'")
                     runOnUiThread {
+                        cancelThinkingTimeout()
                         showAiBubble(thinking = false, text = fullText)
                         if (fullText.isNotEmpty()) {
                             synthesizeAndPlay(fullText)
@@ -865,6 +922,7 @@ class CallActivity : BaseActivity() {
                 override fun onError(error: String) {
                     Log.e(TAG, "[DIAG] LLM.onError: error='$error'")
                     runOnUiThread {
+                        cancelThinkingTimeout()
                         currentState = State.IDLE
                         updateStatus("请求出错: $error")
                         showAiBubble(thinking = false, text = "出错了: $error")
@@ -898,6 +956,8 @@ class CallActivity : BaseActivity() {
     private fun synthesizeAndPlay(text: String) {
         currentState = State.SPEAKING
         updateUI()
+        // [Bug fix] 启动 SPEAKING 超时保护
+        scheduleSpeakingTimeout()
 
         val currentDuix = duix ?: run {
             currentState = State.IDLE
@@ -1185,6 +1245,8 @@ class CallActivity : BaseActivity() {
     }
 
     private fun stopSpeaking() {
+        cancelSpeakingTimeout()
+        cancelThinkingTimeout()
         try {
             edgeTtsService.stop()
         } catch (e: Exception) {
@@ -2036,6 +2098,8 @@ class CallActivity : BaseActivity() {
     override fun onDestroy() {
         super.onDestroy()
         cancelAutoListen()
+        cancelSpeakingTimeout()
+        cancelThinkingTimeout()
         try {
             if (::asrService.isInitialized) asrService.destroy()
         } catch (e: Exception) {

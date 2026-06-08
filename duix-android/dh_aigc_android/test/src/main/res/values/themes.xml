@@ -5,16 +5,17 @@
     - 保留AppCompat兼容性
     - 不设置windowBackground（避免edge-to-edge下白屏）
     - 实际UI背景由Activity在onCreate中用代码设置
+    - 蓝青品牌色 #00D4FF
     -->
     <style name="Theme.DUIX.Test" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowIsTranslucent">false</item>
         <item name="android:windowIsFloating">false</item>
-        <item name="android:statusBarColor">#FF5A52D5</item>
-        <item name="android:navigationBarColor">#FF1A1A2E</item>
-        <item name="colorPrimary">#6C63FF</item>
-        <item name="colorPrimaryDark">#5A52D5</item>
-        <item name="colorAccent">#6C63FF</item>
+        <item name="android:statusBarColor">#FF0099CC</item>
+        <item name="android:navigationBarColor">#FF0A0A1A</item>
+        <item name="colorPrimary">#00D4FF</item>
+        <item name="colorPrimaryDark">#0099CC</item>
+        <item name="colorAccent">#00D4FF</item>
     </style>
 
     <!-- MainActivity专用：使用系统主题，避免AppCompat在Android 15上的兼容性问题 -->
@@ -22,7 +23,7 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowIsTranslucent">false</item>
         <item name="android:windowIsFloating">false</item>
-        <item name="android:statusBarColor">#FF5A52D5</item>
-        <item name="android:navigationBarColor">#FF1A1A2E</item>
+        <item name="android:statusBarColor">#FF0099CC</item>
+        <item name="android:navigationBarColor">#FF0A0A1A</item>
     </style>
 </resources>

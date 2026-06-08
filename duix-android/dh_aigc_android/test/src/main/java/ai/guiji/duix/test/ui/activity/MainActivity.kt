@@ -34,11 +34,11 @@ class MainActivity : Activity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        private const val BG_COLOR = 0xFF6C63FF.toInt()
+        private const val BG_COLOR = 0xFF0099CC.toInt()
         private const val TEXT_COLOR = 0xFFFFFFFF.toInt()
         private const val CARD_COLOR = 0xFFFFFFFF.toInt()
         private const val CARD_TEXT_COLOR = 0xFF1A1A2E.toInt()
-        private const val PRIMARY_COLOR = 0xFF6C63FF.toInt()
+        private const val PRIMARY_COLOR = 0xFF00D4FF.toInt()
         private const val SUCCESS_COLOR = 0xFF22C55E.toInt()
         private const val ERROR_COLOR = 0xFFEF4444.toInt()
         private const val DISABLED_COLOR = 0xFF9CA3AF.toInt()
@@ -82,7 +82,7 @@ class MainActivity : Activity() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-                window.statusBarColor = 0xFF5A52D5.toInt()
+                window.statusBarColor = 0xFF0099CC.toInt()
             }
         } catch (e: Throwable) {
             Log.w(TAG, "设置窗口标志失败", e)

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 麦克风按钮：品牌色径向渐变（带阴影视觉重量） -->
+<!-- 麦克风按钮：蓝青品牌色径向渐变 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 外圈阴影层（深紫） -->
+    <!-- 外圈阴影层 -->
     <item>
         <shape android:shape="oval">
             <solid android:color="#33000000" />
@@ -16,9 +16,9 @@
         <shape android:shape="oval">
             <gradient
                 android:type="radial"
-                android:gradientRadius="80"
-                android:startColor="#FF8B83FF"
-                android:endColor="#FF5A52D5" />
+                android:gradientRadius="60"
+                android:startColor="#FF00D4FF"
+                android:endColor="#FF0099CC" />
         </shape>
     </item>
 </layer-list>

@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- [P2-C] 悬浮窗主体：圆形渐变蓝青背景，呼应主品牌色 -->
+<!-- 悬浮窗主体：圆形渐变蓝青背景 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
     <gradient
         android:type="radial"
         android:startColor="#FF00D4FF"
-        android:centerColor="#FF6C63FF"
+        android:centerColor="#FF0099CC"
         android:endColor="#FF1A1A2E"
         android:gradientRadius="50dp" />
     <stroke

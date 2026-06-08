@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 底部面板：深色毛玻璃 + 顶部 20dp 圆角 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#B3000000" />
+    <solid android:color="#E60A0A1A" />
     <corners
         android:topLeftRadius="20dp"
         android:topRightRadius="20dp"
