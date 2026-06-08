@@ -20,6 +20,10 @@ object AiConfig {
     const val TTS_MODEL = "qwen3-tts-flash-realtime"
     const val TTS_DEFAULT_VOICE = "Cherry"  // 中文女声
 
+    // TTS - MiMo (小米 mimo-v2.5-tts)
+    // OpenAI 兼容的 Chat Completions 格式，REST API 非流式
+    const val MIMO_API_KEY = ""  // 小米 MiMo API Key，需填入
+
     // LLM - Agnes AI (agnes-2.0-flash)
     // 独立 API key，因为百炼 key 不能调普通 LLM 模型（Model.AccessDenied）
     const val AGNES_AI_API_KEY = "sk-TuKWa0JQb9nGiUc7d6goWxpRzhUGfRpALI1DASAf1qOIXNCs"
