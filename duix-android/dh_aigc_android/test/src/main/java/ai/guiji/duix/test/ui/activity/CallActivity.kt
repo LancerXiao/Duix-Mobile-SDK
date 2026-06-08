@@ -1368,7 +1368,6 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                                         cancelSpeakingTimeout()
                                         scheduleTtsCompletionRecovery("Edge TTS")
                                     }
-                                    }
                                 }
 
                                 override fun onError(error: String) {
@@ -2919,7 +2918,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             try { edgeTtsService.stop() } catch (_: Exception) {}
             try { qwenTtsService.stop() } catch (_: Exception) {}
             try { mimoTtsService.stop() } catch (_: Exception) {}
-            try { if (::androidTtsService.isInitialized) androidTtsService.stop() } catch (_: Exception) {}
+            try { if (::androidTtsService.isInitialized) androidTtsService.stop() } catch (e: Exception) { Log.e(TAG, "停止Android TTS异常", e) }
             try { duix?.stopAudio() } catch (_: Exception) {}
             setState(State.IDLE)
             updateStatus("Recovered: $reason")
