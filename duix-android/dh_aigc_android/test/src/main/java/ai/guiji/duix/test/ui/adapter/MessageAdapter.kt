@@ -83,7 +83,13 @@ class MessageAdapter : RecyclerView.Adapter<MessageAdapter.MessageViewHolder>() 
         private val dot3: View? = itemView.findViewById(R.id.dot3)
 
         fun bind(message: MessageData) {
-            tvText.text = message.text
+            // [Phase 5.1 P0-2] AI 消息用 Markdown 渲染（粗体/斜体/代码块/标题）
+            // 用户消息保持原始（用户输入内容不应被改写）
+            if (message.role == MessageData.Role.AI) {
+                MarkdownRenderer.renderInto(tvText, message.text)
+            } else {
+                tvText.text = message.text
+            }
             if (tvThinking != null) {
                 val isThinking = message.isThinking
                 tvThinking.visibility = if (isThinking) View.VISIBLE else View.GONE
