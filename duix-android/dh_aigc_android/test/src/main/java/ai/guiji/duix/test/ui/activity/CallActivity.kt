@@ -2347,6 +2347,34 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         }
     }
 
+    override fun autoFallbackTtsEngine() {
+        // TTS 引擎自动降级：切换到下一个可用的 TTS 引擎
+        val engines = TtsEngine.values()
+        val currentIndex = engines.indexOf(currentTtsEngine)
+        // 从下一个引擎开始，找到第一个可用的
+        for (i in 1..engines.size) {
+            val nextIndex = (currentIndex + i) % engines.size
+            val nextEngine = engines[nextIndex]
+            val isReady = when (nextEngine) {
+                TtsEngine.EDGE_TTS -> true
+                TtsEngine.QWEN_TTS -> true
+                TtsEngine.ANDROID_TTS -> ::androidTtsService.isInitialized && androidTtsService.isReady()
+            }
+            if (isReady) {
+                if (currentTtsEngine != nextEngine) {
+                    val oldName = getTtsEngineDisplayName(currentTtsEngine)
+                    currentTtsEngine = nextEngine
+                    saveTtsEnginePreference(nextEngine)
+                    val newName = getTtsEngineDisplayName(nextEngine)
+                    Log.i(TAG, "[AUTO-FALLBACK] TTS 引擎降级: $oldName → $newName")
+                    showErrorBanner("TTS 自动降级: $oldName → $newName", 3000)
+                }
+                return
+            }
+        }
+        Log.w(TAG, "[AUTO-FALLBACK] 没有可用的 TTS 引擎")
+    }
+
     override fun currentTtsEngineName(): String = getTtsEngineDisplayName(currentTtsEngine)
 
     override fun addStateListener(listener: (PipelineSelfTest.CallState) -> Unit) {
@@ -2367,9 +2395,38 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     override fun onTestComplete(results: List<PipelineSelfTest.RoundResult>, summary: String) {
         isSelfTestRunning = false
         Log.i(TAG, "[SELF-TEST] $summary")
+        // 持久化自测结果
+        saveSelfTestResult(results, summary)
         runOnUiThread {
             // 显示测试结果对话框
             showSelfTestResultDialog(results, summary)
+        }
+    }
+
+    /**
+     * [E2E自测] 保存自测结果到 SharedPreferences
+     */
+    private fun saveSelfTestResult(results: List<PipelineSelfTest.RoundResult>, summary: String) {
+        try {
+            val prefs = getSharedPreferences("pipeline_self_test", MODE_PRIVATE)
+            val passed = results.count { it.asrSuccess && it.llmSuccess && it.ttsSuccess && it.stateRecovery }
+            val failed = results.size - passed
+            val autoFixAttempts = results.count { it.autoFixAction != PipelineSelfTest.AutoFixAction.NONE }
+            val autoFixSuccesses = results.count { it.autoFixAction != PipelineSelfTest.AutoFixAction.NONE && it.autoFixSucceeded }
+
+            prefs.edit()
+                .putLong("last_test_time", System.currentTimeMillis())
+                .putInt("last_test_total", results.size)
+                .putInt("last_test_passed", passed)
+                .putInt("last_test_failed", failed)
+                .putInt("last_test_auto_fix_attempts", autoFixAttempts)
+                .putInt("last_test_auto_fix_successes", autoFixSuccesses)
+                .putString("last_test_summary", summary.take(2000))  // 限制长度
+                .putString("last_test_mode", results.firstOrNull()?.testMode?.name ?: "UNKNOWN")
+                .apply()
+            Log.i(TAG, "[SELF-TEST] 自测结果已保存: $passed/${results.size} 通过")
+        } catch (e: Exception) {
+            Log.e(TAG, "保存自测结果异常", e)
         }
     }
 
@@ -2420,6 +2477,19 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     if (t.thinkingStartMs > 0 && t.thinkingEndMs > 0) append(" LLM=${t.thinkingEndMs - t.thinkingStartMs}ms")
                     if (t.speakingStartMs > 0 && t.speakingEndMs > 0) append(" TTS=${t.speakingEndMs - t.speakingStartMs}ms")
                     r.errorDetail?.let { append(" - $it") }
+                    // 自动修复信息
+                    if (r.retryCount > 0) append(" [重试${r.retryCount}次]")
+                    if (r.autoFixAction != PipelineSelfTest.AutoFixAction.NONE) {
+                        append(" [修复:${r.autoFixAction.name}")
+                        if (r.autoFixSucceeded) append("(成功)")
+                        else append("(失败)")
+                        append("]")
+                    }
+                    // 诊断信息
+                    r.diagnostic?.let { d ->
+                        append("\n  → ${d.likelyCause}")
+                        append("\n  → 建议: ${d.fixSuggestion}")
+                    }
                     append("\n")
                 }
                 append("\n$summary")
@@ -2481,6 +2551,12 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 }
                 PipelineHealthMonitor.AlertType.TTS_ENGINE_NOT_READY -> {
                     showErrorBanner("语音引擎不可用，尝试切换引擎", 4000)
+                }
+                PipelineHealthMonitor.AlertType.TTS_ENGINE_FALLBACK -> {
+                    showErrorBanner("TTS引擎自动降级: ${alert.message}", 4000)
+                }
+                PipelineHealthMonitor.AlertType.LLM_TIMEOUT_SUGGESTION -> {
+                    showErrorBanner("LLM持续超时: ${alert.fixSuggestion}", 6000)
                 }
             }
         }

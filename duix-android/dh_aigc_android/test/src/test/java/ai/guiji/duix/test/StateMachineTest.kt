@@ -15,8 +15,12 @@ import org.junit.Test
  * 3. PipelineSelfTest 状态转换追踪
  * 4. PipelineSelfTest TestMode 枚举
  * 5. PipelineSelfTest StageTiming 数据类
- * 6. PipelineHealthMonitor 新增告警类型
- * 7. 边界情况：连续卡死、快速状态切换
+ * 6. PipelineHealthMonitor 告警类型（含新增 TTS_ENGINE_FALLBACK、LLM_TIMEOUT_SUGGESTION）
+ * 7. PipelineSelfTest AutoFixAction 枚举
+ * 8. PipelineSelfTest DiagnosticInfo 数据类
+ * 9. PipelineHealthMonitor FixAction 枚举
+ * 10. PipelineHealthMonitor HealthScore 数据类
+ * 11. 边界情况：连续卡死、快速状态切换
  */
 class StateMachineTest {
 
@@ -26,6 +30,7 @@ class StateMachineTest {
     private var lastAlert: PipelineHealthMonitor.HealthAlert? = null
     private var forceRecoverCalled = false
     private var forceRecoverReason = ""
+    private var autoFallbackCalled = false
 
     private val healthHost = object : PipelineHealthMonitor.HealthHost {
         private var _state = PipelineSelfTest.CallState.IDLE
@@ -49,6 +54,10 @@ class StateMachineTest {
         override fun isNetworkAvailable() = true
         override fun isDuiXSdkReady() = true
         override fun isCurrentTtsEngineReady() = true
+        override fun autoFallbackTtsEngine() {
+            autoFallbackCalled = true
+        }
+        override fun currentTtsEngineName() = "Edge TTS"
     }
 
     @Before
@@ -57,6 +66,7 @@ class StateMachineTest {
         lastAlert = null
         forceRecoverCalled = false
         forceRecoverReason = ""
+        autoFallbackCalled = false
     }
 
     // --- 非法状态转换检测 ---
@@ -229,9 +239,16 @@ class StateMachineTest {
     }
 
     @Test
-    fun `TestMode has TEXT_ONLY and WITH_ASR`() {
+    fun `TestMode has all expected values`() {
         val expected = setOf("TEXT_ONLY", "WITH_ASR", "TTS_ENGINE_STRESS", "RAPID_MULTI_ROUND")
         val actual = PipelineSelfTest.TestMode.values().map { it.name }.toSet()
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `AutoFixAction has all expected values`() {
+        val expected = setOf("NONE", "RETRY_SAME_INPUT", "FALLBACK_TTS_ENGINE", "FORCE_RECOVER_IDLE")
+        val actual = PipelineSelfTest.AutoFixAction.values().map { it.name }.toSet()
         assertEquals(expected, actual)
     }
 
@@ -248,7 +265,11 @@ class StateMachineTest {
             durationMs = 5000L,
             stageTiming = PipelineSelfTest.StageTiming(),
             errorDetail = null,
-            logs = listOf("log1", "log2")
+            logs = listOf("log1", "log2"),
+            retryCount = 0,
+            autoFixAction = PipelineSelfTest.AutoFixAction.NONE,
+            autoFixSucceeded = false,
+            diagnostic = null
         )
         assertEquals(1, result.round)
         assertEquals("test input", result.input)
@@ -260,6 +281,10 @@ class StateMachineTest {
         assertEquals(5000L, result.durationMs)
         assertNull(result.errorDetail)
         assertEquals(listOf("log1", "log2"), result.logs)
+        assertEquals(0, result.retryCount)
+        assertEquals(PipelineSelfTest.AutoFixAction.NONE, result.autoFixAction)
+        assertFalse(result.autoFixSucceeded)
+        assertNull(result.diagnostic)
     }
 
     @Test
@@ -274,7 +299,10 @@ class StateMachineTest {
             stateRecovery = false,
             durationMs = 35000L,
             stageTiming = PipelineSelfTest.StageTiming(),
-            errorDetail = "ASR 超时"
+            errorDetail = "ASR 超时",
+            retryCount = 2,
+            autoFixAction = PipelineSelfTest.AutoFixAction.RETRY_SAME_INPUT,
+            autoFixSucceeded = false
         )
         assertEquals(PipelineSelfTest.TestMode.WITH_ASR, result.testMode)
         assertFalse(result.asrSuccess)
@@ -282,6 +310,60 @@ class StateMachineTest {
         assertFalse(result.ttsSuccess)
         assertFalse(result.stateRecovery)
         assertEquals("ASR 超时", result.errorDetail)
+        assertEquals(2, result.retryCount)
+        assertEquals(PipelineSelfTest.AutoFixAction.RETRY_SAME_INPUT, result.autoFixAction)
+        assertFalse(result.autoFixSucceeded)
+    }
+
+    @Test
+    fun `RoundResult with auto-fix succeeded`() {
+        val result = PipelineSelfTest.RoundResult(
+            round = 3,
+            input = "test",
+            testMode = PipelineSelfTest.TestMode.TEXT_ONLY,
+            asrSuccess = true,
+            llmSuccess = true,
+            ttsSuccess = true,
+            stateRecovery = true,
+            durationMs = 8000L,
+            stageTiming = PipelineSelfTest.StageTiming(),
+            retryCount = 1,
+            autoFixAction = PipelineSelfTest.AutoFixAction.FALLBACK_TTS_ENGINE,
+            autoFixSucceeded = true
+        )
+        assertTrue(result.autoFixSucceeded)
+        assertEquals(PipelineSelfTest.AutoFixAction.FALLBACK_TTS_ENGINE, result.autoFixAction)
+        assertEquals(1, result.retryCount)
+    }
+
+    @Test
+    fun `DiagnosticInfo data class works correctly`() {
+        val diagnostic = PipelineSelfTest.DiagnosticInfo(
+            failureStage = "TTS",
+            likelyCause = "TTS 引擎未就绪",
+            fixSuggestion = "切换到 Edge TTS",
+            isNetworkRelated = false,
+            isEngineRelated = true
+        )
+        assertEquals("TTS", diagnostic.failureStage)
+        assertEquals("TTS 引擎未就绪", diagnostic.likelyCause)
+        assertEquals("切换到 Edge TTS", diagnostic.fixSuggestion)
+        assertFalse(diagnostic.isNetworkRelated)
+        assertTrue(diagnostic.isEngineRelated)
+    }
+
+    @Test
+    fun `DiagnosticInfo for LLM timeout`() {
+        val diagnostic = PipelineSelfTest.DiagnosticInfo(
+            failureStage = "LLM",
+            likelyCause = "LLM 服务持续超时",
+            fixSuggestion = "检查 API Key 配置",
+            isNetworkRelated = true,
+            isEngineRelated = true
+        )
+        assertEquals("LLM", diagnostic.failureStage)
+        assertTrue(diagnostic.isNetworkRelated)
+        assertTrue(diagnostic.isEngineRelated)
     }
 
     @Test
@@ -326,7 +408,8 @@ class StateMachineTest {
     fun `HealthAlert types cover all expected scenarios`() {
         val expected = setOf(
             "STATE_STUCK", "STATE_ILLEGAL_TRANSITION", "TTS_PIPELINE_BROKEN",
-            "NETWORK_UNAVAILABLE", "DUIX_SDK_NOT_READY", "TTS_ENGINE_NOT_READY"
+            "NETWORK_UNAVAILABLE", "DUIX_SDK_NOT_READY", "TTS_ENGINE_NOT_READY",
+            "TTS_ENGINE_FALLBACK", "LLM_TIMEOUT_SUGGESTION"
         )
         val actual = PipelineHealthMonitor.AlertType.values().map { it.name }.toSet()
         assertEquals(expected, actual)
@@ -338,12 +421,16 @@ class StateMachineTest {
             type = PipelineHealthMonitor.AlertType.STATE_STUCK,
             state = PipelineSelfTest.CallState.THINKING,
             durationMs = 40000L,
-            message = "THINKING 状态卡死 40000ms"
+            message = "THINKING 状态卡死 40000ms",
+            fixAction = PipelineHealthMonitor.FixAction.FORCE_RECOVER,
+            fixSuggestion = "LLM 响应超时，已自动恢复"
         )
         assertEquals(PipelineHealthMonitor.AlertType.STATE_STUCK, alert.type)
         assertEquals(PipelineSelfTest.CallState.THINKING, alert.state)
         assertEquals(40000L, alert.durationMs)
         assertEquals("THINKING 状态卡死 40000ms", alert.message)
+        assertEquals(PipelineHealthMonitor.FixAction.FORCE_RECOVER, alert.fixAction)
+        assertEquals("LLM 响应超时，已自动恢复", alert.fixSuggestion)
     }
 
     @Test
@@ -352,9 +439,12 @@ class StateMachineTest {
             type = PipelineHealthMonitor.AlertType.NETWORK_UNAVAILABLE,
             state = PipelineSelfTest.CallState.THINKING,
             durationMs = 5000L,
-            message = "网络不可用"
+            message = "网络不可用",
+            fixAction = PipelineHealthMonitor.FixAction.CHECK_NETWORK,
+            fixSuggestion = "请检查 WiFi/移动数据连接"
         )
         assertEquals(PipelineHealthMonitor.AlertType.NETWORK_UNAVAILABLE, alert.type)
+        assertEquals(PipelineHealthMonitor.FixAction.CHECK_NETWORK, alert.fixAction)
     }
 
     @Test
@@ -363,9 +453,12 @@ class StateMachineTest {
             type = PipelineHealthMonitor.AlertType.TTS_ENGINE_NOT_READY,
             state = PipelineSelfTest.CallState.SPEAKING,
             durationMs = 3000L,
-            message = "TTS 引擎不可用"
+            message = "TTS 引擎不可用",
+            fixAction = PipelineHealthMonitor.FixAction.FALLBACK_TTS_ENGINE,
+            fixSuggestion = "将自动切换到备用 TTS 引擎"
         )
         assertEquals(PipelineHealthMonitor.AlertType.TTS_ENGINE_NOT_READY, alert.type)
+        assertEquals(PipelineHealthMonitor.FixAction.FALLBACK_TTS_ENGINE, alert.fixAction)
     }
 
     @Test
@@ -377,5 +470,78 @@ class StateMachineTest {
             message = "DUIX SDK 未就绪"
         )
         assertEquals(PipelineHealthMonitor.AlertType.DUIX_SDK_NOT_READY, alert.type)
+    }
+
+    @Test
+    fun `HealthAlert TTS engine fallback type`() {
+        val alert = PipelineHealthMonitor.HealthAlert(
+            type = PipelineHealthMonitor.AlertType.TTS_ENGINE_FALLBACK,
+            state = PipelineSelfTest.CallState.SPEAKING,
+            durationMs = 20000L,
+            message = "TTS 引擎自动降级: Edge TTS → Android TTS",
+            fixAction = PipelineHealthMonitor.FixAction.FALLBACK_TTS_ENGINE,
+            fixSuggestion = "已切换到备用 TTS 引擎"
+        )
+        assertEquals(PipelineHealthMonitor.AlertType.TTS_ENGINE_FALLBACK, alert.type)
+        assertEquals(PipelineHealthMonitor.FixAction.FALLBACK_TTS_ENGINE, alert.fixAction)
+    }
+
+    @Test
+    fun `HealthAlert LLM timeout suggestion type`() {
+        val alert = PipelineHealthMonitor.HealthAlert(
+            type = PipelineHealthMonitor.AlertType.LLM_TIMEOUT_SUGGESTION,
+            state = PipelineSelfTest.CallState.THINKING,
+            durationMs = 35000L,
+            message = "LLM 连续超时 3 次",
+            fixAction = PipelineHealthMonitor.FixAction.CHECK_LLM_CONFIG,
+            fixSuggestion = "检查 AiConfig 中 LLM 配置"
+        )
+        assertEquals(PipelineHealthMonitor.AlertType.LLM_TIMEOUT_SUGGESTION, alert.type)
+        assertEquals(PipelineHealthMonitor.FixAction.CHECK_LLM_CONFIG, alert.fixAction)
+    }
+
+    // ========== FixAction 测试 ==========
+
+    @Test
+    fun `FixAction has all expected values`() {
+        val expected = setOf("NONE", "FORCE_RECOVER", "FALLBACK_TTS_ENGINE", "CHECK_NETWORK", "CHECK_LLM_CONFIG")
+        val actual = PipelineHealthMonitor.FixAction.values().map { it.name }.toSet()
+        assertEquals(expected, actual)
+    }
+
+    // ========== HealthScore 测试 ==========
+
+    @Test
+    fun `HealthScore data class works correctly`() {
+        val score = PipelineHealthMonitor.HealthScore(
+            score = 85,
+            issues = listOf("LLM 连续超时 1 次"),
+            lastUpdatedMs = System.currentTimeMillis()
+        )
+        assertEquals(85, score.score)
+        assertEquals(1, score.issues.size)
+        assertEquals("LLM 连续超时 1 次", score.issues[0])
+    }
+
+    @Test
+    fun `HealthScore with multiple issues`() {
+        val score = PipelineHealthMonitor.HealthScore(
+            score = 30,
+            issues = listOf("连续卡死 3 次", "网络不可用", "TTS 引擎不可用"),
+            lastUpdatedMs = System.currentTimeMillis()
+        )
+        assertEquals(30, score.score)
+        assertEquals(3, score.issues.size)
+    }
+
+    @Test
+    fun `HealthScore perfect score`() {
+        val score = PipelineHealthMonitor.HealthScore(
+            score = 100,
+            issues = emptyList(),
+            lastUpdatedMs = System.currentTimeMillis()
+        )
+        assertEquals(100, score.score)
+        assertTrue(score.issues.isEmpty())
     }
 }

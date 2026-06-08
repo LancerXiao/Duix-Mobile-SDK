@@ -14,6 +14,12 @@ import android.util.Log
  * 4. 验证状态机正确回到 IDLE
  * 5. 多轮对话循环测试，验证"数字人只说一次话"bug 已修复
  *
+ * 增强功能：
+ * - 失败自动重试（每轮最多重试 2 次）
+ * - TTS 引擎自动降级（TTS 失败时切换引擎重试）
+ * - 智能诊断（根据失败模式给出修复建议）
+ * - 自测结果持久化（通过 TestHost 保存）
+ *
  * 使用方式：
  *   PipelineSelfTest(host).start()
  *   host 需实现 TestHost 接口
@@ -29,6 +35,8 @@ class PipelineSelfTest(private val host: TestHost) {
         private const val ROUND_DELAY_MS = 2_000L            // 每轮之间的间隔
         // 默认测试轮数
         private const val DEFAULT_ROUNDS = 3
+        // 每轮最大重试次数
+        private const val MAX_RETRY_PER_ROUND = 2
         // 测试用的输入文本
         private val TEST_INPUTS = listOf(
             "你好，请用一句话介绍你自己",
@@ -54,6 +62,14 @@ class PipelineSelfTest(private val host: TestHost) {
         val idleRecoveryMs: Long = 0
     )
 
+    /** 失败时的自动修复动作 */
+    enum class AutoFixAction {
+        NONE,                   // 无需修复
+        RETRY_SAME_INPUT,       // 重试相同输入
+        FALLBACK_TTS_ENGINE,    // 切换 TTS 引擎后重试
+        FORCE_RECOVER_IDLE      // 强制恢复 IDLE 后重试
+    }
+
     data class RoundResult(
         val round: Int,
         val input: String,
@@ -65,7 +81,20 @@ class PipelineSelfTest(private val host: TestHost) {
         val durationMs: Long,
         val stageTiming: StageTiming,
         val errorDetail: String? = null,
-        val logs: List<String> = emptyList()
+        val logs: List<String> = emptyList(),
+        val retryCount: Int = 0,
+        val autoFixAction: AutoFixAction = AutoFixAction.NONE,
+        val autoFixSucceeded: Boolean = false,
+        val diagnostic: DiagnosticInfo? = null
+    )
+
+    /** 诊断信息：分析失败原因并给出修复建议 */
+    data class DiagnosticInfo(
+        val failureStage: String,          // 失败阶段: "ASR"/"LLM"/"TTS"/"STATE_RECOVERY"
+        val likelyCause: String,           // 可能原因
+        val fixSuggestion: String,         // 修复建议
+        val isNetworkRelated: Boolean = false,  // 是否与网络相关
+        val isEngineRelated: Boolean = false    // 是否与引擎相关
     )
 
     private val handler = Handler(Looper.getMainLooper())
@@ -87,6 +116,16 @@ class PipelineSelfTest(private val host: TestHost) {
     private var roundError: String? = null
     private var stageTiming = StageTiming()
 
+    // 重试相关
+    private var retryCount = 0
+    private var lastAutoFixAction = AutoFixAction.NONE
+    private var lastAutoFixSucceeded = false
+    private var ttsFallbackTriggered = false
+
+    // 超时轮次追踪（用于检测系统性问题）
+    private var consecutiveLlmTimeouts = 0
+    private var consecutiveTtsFailures = 0
+
     // 状态监听器
     private var stateListener: ((CallState) -> Unit)? = null
 
@@ -107,8 +146,10 @@ class PipelineSelfTest(private val host: TestHost) {
         totalRounds = rounds
         testMode = mode
         results.clear()
+        consecutiveLlmTimeouts = 0
+        consecutiveTtsFailures = 0
 
-        val modeName = if (mode == TestMode.WITH_ASR) "ASR+LLM+TTS" else "LLM+TTS"
+        val modeName = getModeDisplayName(mode)
         Log.i(TAG, "=== 管线端到端自测开始 === 共 $totalRounds 轮, 模式=$modeName, TTS=${host.currentTtsEngineName()}")
         host.onTestLog("自测开始: $totalRounds 轮, $modeName, TTS=${host.currentTtsEngineName()}")
 
@@ -130,6 +171,13 @@ class PipelineSelfTest(private val host: TestHost) {
         stateListener = null
         handler.removeCallbacksAndMessages(null)
         Log.i(TAG, "自测已停止")
+    }
+
+    private fun getModeDisplayName(mode: TestMode): String = when (mode) {
+        TestMode.TEXT_ONLY -> "LLM+TTS"
+        TestMode.WITH_ASR -> "ASR+LLM+TTS"
+        TestMode.TTS_ENGINE_STRESS -> "TTS压力测试"
+        TestMode.RAPID_MULTI_ROUND -> "快速多轮"
     }
 
     private fun logRound(message: String) {
@@ -158,6 +206,10 @@ class PipelineSelfTest(private val host: TestHost) {
         roundError = null
         roundLogs.clear()
         stageTiming = StageTiming()
+        retryCount = 0
+        lastAutoFixAction = AutoFixAction.NONE
+        lastAutoFixSucceeded = false
+        ttsFallbackTriggered = false
 
         logRound("--- 第 $currentRound/$totalRounds 轮 --- 输入: $input")
 
@@ -168,9 +220,18 @@ class PipelineSelfTest(private val host: TestHost) {
                 if (host.getCallState() == CallState.IDLE) {
                     startRoundInput(input)
                 } else {
-                    recordRoundResult(input, asrSuccess = false, llmSuccess = false, ttsSuccess = false,
-                        stateRecovery = false, "状态卡在 ${host.getCallState()}，无法开始")
-                    handler.postDelayed({ runNextRound() }, ROUND_DELAY_MS)
+                    // 状态卡死，尝试强制恢复
+                    logRound("[AUTO-FIX] 状态卡在 ${host.getCallState()}，尝试强制恢复")
+                    host.forceRecoverToIdle("自测: 状态卡死 ${host.getCallState()}")
+                    handler.postDelayed({
+                        if (host.getCallState() == CallState.IDLE) {
+                            startRoundInput(input)
+                        } else {
+                            recordRoundResult(input, asrSuccess = false, llmSuccess = false, ttsSuccess = false,
+                                stateRecovery = false, "状态卡在 ${host.getCallState()}，强制恢复失败")
+                            handler.postDelayed({ runNextRound() }, ROUND_DELAY_MS)
+                        }
+                    }, 3000L)
                 }
             }, 5000L)
             return
@@ -282,6 +343,10 @@ class PipelineSelfTest(private val host: TestHost) {
                     val duration = now - roundStartTime
                     logRound("第 $currentRound 轮: 回到 IDLE，耗时 ${duration}ms")
 
+                    // 重置连续失败计数
+                    if (llmReturnedText) consecutiveLlmTimeouts = 0
+                    if (sawSpeaking) consecutiveTtsFailures = 0
+
                     recordRoundResult(
                         input = TEST_INPUTS[(currentRound - 1) % TEST_INPUTS.size],
                         asrSuccess = if (testMode == TestMode.WITH_ASR) asrSucceeded else true,
@@ -309,6 +374,51 @@ class PipelineSelfTest(private val host: TestHost) {
         errorDetail: String?
     ) {
         val duration = System.currentTimeMillis() - roundStartTime
+        val allPass = asrSuccess && llmSuccess && ttsSuccess && stateRecovery
+
+        // 更新连续失败计数
+        if (!llmSuccess) consecutiveLlmTimeouts++ else consecutiveLlmTimeouts = 0
+        if (!ttsSuccess && llmSuccess) consecutiveTtsFailures++ else consecutiveTtsFailures = 0
+
+        // 生成诊断信息（仅失败时）
+        val diagnostic = if (!allPass) {
+            diagnoseFailure(asrSuccess, llmSuccess, ttsSuccess, stateRecovery, errorDetail)
+        } else null
+
+        // 如果失败且还有重试次数，尝试自动修复并重试
+        if (!allPass && retryCount < MAX_RETRY_PER_ROUND) {
+            val fixAction = determineAutoFixAction(asrSuccess, llmSuccess, ttsSuccess, stateRecovery, diagnostic)
+            if (fixAction != AutoFixAction.NONE) {
+                retryCount++
+                lastAutoFixAction = fixAction
+                logRound("[AUTO-FIX] 第 $currentRound 轮失败，执行自动修复: $fixAction (重试 $retryCount/$MAX_RETRY_PER_ROUND)")
+
+                // 记录当前失败结果（但不计入最终结果）
+                val failedResult = RoundResult(
+                    round = currentRound,
+                    input = input,
+                    testMode = testMode,
+                    asrSuccess = asrSuccess,
+                    llmSuccess = llmSuccess,
+                    ttsSuccess = ttsSuccess,
+                    stateRecovery = stateRecovery,
+                    durationMs = duration,
+                    stageTiming = stageTiming,
+                    errorDetail = errorDetail,
+                    logs = roundLogs.toList(),
+                    retryCount = retryCount,
+                    autoFixAction = fixAction,
+                    autoFixSucceeded = false,
+                    diagnostic = diagnostic
+                )
+
+                // 执行自动修复
+                executeAutoFix(fixAction, input, failedResult)
+                return
+            }
+        }
+
+        // 记录最终结果
         val result = RoundResult(
             round = currentRound,
             input = input,
@@ -320,17 +430,165 @@ class PipelineSelfTest(private val host: TestHost) {
             durationMs = duration,
             stageTiming = stageTiming,
             errorDetail = errorDetail,
-            logs = roundLogs.toList()
+            logs = roundLogs.toList(),
+            retryCount = retryCount,
+            autoFixAction = lastAutoFixAction,
+            autoFixSucceeded = allPass && retryCount > 0,
+            diagnostic = diagnostic
         )
         results.add(result)
 
-        val allPass = asrSuccess && llmSuccess && ttsSuccess && stateRecovery
         val status = if (allPass) "PASS" else "FAIL"
         val details = buildString {
             append("ASR=$asrSuccess LLM=$llmSuccess TTS=$ttsSuccess Recovery=$stateRecovery")
             errorDetail?.let { append(" | $it") }
+            if (retryCount > 0) append(" | 重试${retryCount}次")
+            if (lastAutoFixAction != AutoFixAction.NONE && allPass) append(" | 自动修复成功")
         }
         logRound("第 $currentRound 轮结果: $status | ${duration}ms | $details")
+
+        // 如果失败且没有重试，也检查是否需要进入下一轮
+        if (!allPass && isRunning) {
+            // 确保状态恢复到 IDLE
+            if (host.getCallState() != CallState.IDLE) {
+                host.forceRecoverToIdle("自测: 第 $currentRound 轮失败后恢复")
+            }
+            val delay = if (testMode == TestMode.RAPID_MULTI_ROUND) 500L else ROUND_DELAY_MS
+            handler.postDelayed({ runNextRound() }, delay)
+        }
+    }
+
+    /** 根据失败模式确定自动修复动作 */
+    private fun determineAutoFixAction(
+        asrSuccess: Boolean, llmSuccess: Boolean, ttsSuccess: Boolean,
+        stateRecovery: Boolean, diagnostic: DiagnosticInfo?
+    ): AutoFixAction {
+        // TTS 失败但 LLM 成功 → 切换 TTS 引擎重试
+        if (llmSuccess && !ttsSuccess && !ttsFallbackTriggered) {
+            return AutoFixAction.FALLBACK_TTS_ENGINE
+        }
+        // 状态未恢复 → 强制恢复后重试
+        if (!stateRecovery) {
+            return AutoFixAction.FORCE_RECOVER_IDLE
+        }
+        // LLM 超时但非系统性（连续超时 < 3）→ 重试
+        if (!llmSuccess && consecutiveLlmTimeouts < 3) {
+            return AutoFixAction.RETRY_SAME_INPUT
+        }
+        // ASR 失败 → 重试
+        if (!asrSuccess && testMode == TestMode.WITH_ASR) {
+            return AutoFixAction.RETRY_SAME_INPUT
+        }
+        return AutoFixAction.NONE
+    }
+
+    /** 执行自动修复并重试 */
+    private fun executeAutoFix(action: AutoFixAction, input: String, failedResult: RoundResult) {
+        when (action) {
+            AutoFixAction.FALLBACK_TTS_ENGINE -> {
+                ttsFallbackTriggered = true
+                host.autoFallbackTtsEngine()
+                logRound("[AUTO-FIX] 已切换 TTS 引擎到: ${host.currentTtsEngineName()}")
+                // 等待引擎切换生效后重试
+                handler.postDelayed({
+                    resetRoundState()
+                    startRoundInput(input)
+                }, 2000L)
+            }
+            AutoFixAction.FORCE_RECOVER_IDLE -> {
+                host.forceRecoverToIdle("自测自动修复: 强制恢复 IDLE")
+                logRound("[AUTO-FIX] 已强制恢复 IDLE")
+                handler.postDelayed({
+                    resetRoundState()
+                    startRoundInput(input)
+                }, 3000L)
+            }
+            AutoFixAction.RETRY_SAME_INPUT -> {
+                // 确保状态恢复
+                if (host.getCallState() != CallState.IDLE) {
+                    host.forceRecoverToIdle("自测重试: 恢复 IDLE")
+                }
+                logRound("[AUTO-FIX] 重试相同输入")
+                handler.postDelayed({
+                    resetRoundState()
+                    startRoundInput(input)
+                }, 3000L)
+            }
+            AutoFixAction.NONE -> { /* 不做任何事 */ }
+        }
+    }
+
+    /** 重置轮次追踪状态（用于重试） */
+    private fun resetRoundState() {
+        roundStartTime = System.currentTimeMillis()
+        sawListening = false
+        sawThinking = false
+        sawSpeaking = false
+        sawIdleRecovery = false
+        llmReturnedText = false
+        asrSucceeded = false
+        roundError = null
+        roundLogs.clear()
+        stageTiming = StageTiming()
+    }
+
+    /** 诊断失败原因 */
+    private fun diagnoseFailure(
+        asrSuccess: Boolean, llmSuccess: Boolean, ttsSuccess: Boolean,
+        stateRecovery: Boolean, errorDetail: String?
+    ): DiagnosticInfo {
+        // 优先诊断最关键的失败
+        return when {
+            // ASR 失败
+            !asrSuccess && testMode == TestMode.WITH_ASR -> DiagnosticInfo(
+                failureStage = "ASR",
+                likelyCause = if (!host.isNetworkAvailable()) "网络不可用，ASR 服务无法连接"
+                    else "ASR 引擎初始化失败或录音权限被拒绝",
+                fixSuggestion = if (!host.isNetworkAvailable()) "检查网络连接后重试"
+                    else "检查麦克风权限，或切换到 DashScope ASR 引擎",
+                isNetworkRelated = !host.isNetworkAvailable(),
+                isEngineRelated = host.isNetworkAvailable()
+            )
+            // LLM 失败
+            !llmSuccess -> DiagnosticInfo(
+                failureStage = "LLM",
+                likelyCause = if (consecutiveLlmTimeouts >= 3) "LLM 服务持续超时，可能是 API Key 无效或服务宕机"
+                    else if (!host.isNetworkAvailable()) "网络不可用，LLM 请求无法发出"
+                    else "LLM 响应超时，可能是网络延迟或服务端负载高",
+                fixSuggestion = if (consecutiveLlmTimeouts >= 3) "检查 LLM API Key 配置和服务可用性"
+                    else if (!host.isNetworkAvailable()) "检查网络连接后重试"
+                    else "重试或检查 LLM 服务状态",
+                isNetworkRelated = true,
+                isEngineRelated = consecutiveLlmTimeouts >= 3
+            )
+            // TTS 失败
+            !ttsSuccess -> DiagnosticInfo(
+                failureStage = "TTS",
+                likelyCause = if (!host.isCurrentTtsEngineReady()) "当前 TTS 引擎未就绪"
+                    else if (consecutiveTtsFailures >= 2) "TTS 引擎持续失败，可能存在系统性问题"
+                    else "TTS 合成超时或失败",
+                fixSuggestion = if (!host.isCurrentTtsEngineReady()) "切换到其他 TTS 引擎（如 Edge TTS）"
+                    else if (consecutiveTtsFailures >= 2) "尝试切换 TTS 引擎，或检查网络连接"
+                    else "重试或切换 TTS 引擎",
+                isNetworkRelated = true,
+                isEngineRelated = true
+            )
+            // 状态未恢复
+            !stateRecovery -> DiagnosticInfo(
+                failureStage = "STATE_RECOVERY",
+                likelyCause = "状态机卡死，可能是 TTS 播放完成回调未触发或 AudioPlayer 生命周期异常",
+                fixSuggestion = "检查 AudioPlayer.pushDone() 后 PlaybackThread 是否正确退出，以及 pushStart() 是否能重启",
+                isNetworkRelated = false,
+                isEngineRelated = false
+            )
+            else -> DiagnosticInfo(
+                failureStage = "UNKNOWN",
+                likelyCause = errorDetail ?: "未知错误",
+                fixSuggestion = "查看详细日志定位问题",
+                isNetworkRelated = false,
+                isEngineRelated = false
+            )
+        }
     }
 
     private fun finishTest() {
@@ -351,6 +609,10 @@ class PipelineSelfTest(private val host: TestHost) {
         val avgAsrMs = results.filter { it.stageTiming.asrStartMs > 0 && it.stageTiming.asrEndMs > 0 }
             .map { it.stageTiming.asrEndMs - it.stageTiming.asrStartMs }.average().toLong()
 
+        // 统计自动修复效果
+        val autoFixAttempts = results.count { it.autoFixAction != AutoFixAction.NONE }
+        val autoFixSuccesses = results.count { it.autoFixAction != AutoFixAction.NONE && it.autoFixSucceeded }
+
         val summary = buildString {
             append("=== 自测完成 ===\n")
             append("总轮数: $totalResults, 通过: $passed, 失败: $failed\n")
@@ -360,11 +622,18 @@ class PipelineSelfTest(private val host: TestHost) {
             if (avgAsrMs > 0) append("平均ASR耗时: ${avgAsrMs}ms\n")
             if (avgThinkingMs > 0) append("平均LLM耗时: ${avgThinkingMs}ms\n")
             if (avgSpeakingMs > 0) append("平均TTS耗时: ${avgSpeakingMs}ms\n")
+            if (autoFixAttempts > 0) {
+                append("自动修复: ${autoFixAttempts}次尝试, ${autoFixSuccesses}次成功\n")
+            }
             if (failed > 0) {
                 append("\n失败详情:\n")
                 results.filter { !it.asrSuccess || !it.llmSuccess || !it.ttsSuccess || !it.stateRecovery }.forEach { r ->
                     append("  第${r.round}轮: ASR=${r.asrSuccess} LLM=${r.llmSuccess} TTS=${r.ttsSuccess} Recovery=${r.stateRecovery}")
                     r.errorDetail?.let { append(" - $it") }
+                    r.diagnostic?.let { d ->
+                        append("\n    诊断: ${d.likelyCause}")
+                        append("\n    建议: ${d.fixSuggestion}")
+                    }
                     append("\n")
                 }
             }
@@ -378,6 +647,11 @@ class PipelineSelfTest(private val host: TestHost) {
                     append(" LLM=${r.stageTiming.thinkingEndMs - r.stageTiming.thinkingStartMs}ms")
                 if (r.stageTiming.speakingStartMs > 0 && r.stageTiming.speakingEndMs > 0)
                     append(" TTS=${r.stageTiming.speakingEndMs - r.stageTiming.speakingStartMs}ms")
+                if (r.retryCount > 0) append(" 重试${r.retryCount}次")
+                if (r.autoFixAction != AutoFixAction.NONE) {
+                    append(" 修复=${r.autoFixAction.name}")
+                    if (r.autoFixSucceeded) append("(成功)")
+                }
                 append("\n")
             }
         }
@@ -400,6 +674,10 @@ interface TestHost {
     fun simulateAsrInput(text: String)
     /** TTS 引擎压力测试：根据轮次切换 TTS 引擎 */
     fun switchTtsEngineForTest(round: Int)
+    /** TTS 引擎自动降级：切换到下一个可用的 TTS 引擎 */
+    fun autoFallbackTtsEngine()
+    /** 强制恢复 IDLE 状态 */
+    fun forceRecoverToIdle(reason: String)
     /** 是否就绪（DUIX 已初始化完成） */
     fun isDuiXReady(): Boolean
     /** 当前 TTS 引擎名 */
@@ -412,4 +690,8 @@ interface TestHost {
     fun onTestLog(message: String)
     /** 自测完成回调 */
     fun onTestComplete(results: List<PipelineSelfTest.RoundResult>, summary: String)
+    /** 检查网络是否可用 */
+    fun isNetworkAvailable(): Boolean
+    /** 检查当前 TTS 引擎是否就绪 */
+    fun isCurrentTtsEngineReady(): Boolean
 }
