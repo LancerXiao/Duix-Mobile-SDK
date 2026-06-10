@@ -311,7 +311,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             setState(State.IDLE)
             updateStatus("Timeout")
             updateUI()
-            showAiBubble(thinking = false, text = "请求超时，请重试")
+            showAiBubble(thinking = false, text = "Request timeout, please retry")
             scheduleAutoListen()
         }
     }
@@ -355,7 +355,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         // 安全检查：模型未下载时直接返回
         if (modelUrl.isEmpty() || modelName.isEmpty()) {
             Log.e(TAG, "未指定模型: modelName=$modelName, modelUrl=$modelUrl")
-            showLoadingError("未指定模型", "请返回主页选择数字人")
+            showLoadingError("Model not specified", "Please go back and select a digital human")
             return
         }
 
@@ -363,12 +363,12 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         val modelManager = ai.guiji.duix.test.service.ModelManager()
         if (!modelManager.isBaseConfigReady(mContext)) {
             Log.e(TAG, "基础资源未下载")
-            showLoadingError("基础资源未下载", "请返回主页下载基础资源")
+            showLoadingError("Base config not downloaded", "Please go back to download base config")
             return
         }
         if (!modelManager.isModelReady(mContext, modelName)) {
             Log.e(TAG, "模型未下载: $modelName")
-            showLoadingError("模型未下载", "请返回主页下载模型: $modelName")
+            showLoadingError("Model not downloaded", "Please go back to download model: $modelName")
             return
         }
 
@@ -392,7 +392,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         }
 
         // 初始化时显示全屏 loading
-        showLoading("正在加载...")
+        showLoading("Loading...")
 
         try {
             Glide.with(mContext).load("file:///android_asset/bg/bg1.png").into(binding.ivBg)
@@ -532,7 +532,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             binding.glTextureView.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
         } catch (e: Exception) {
             Log.e(TAG, "初始化渲染器失败", e)
-            showLoadingError("渲染器初始化失败", e.message ?: "未知错误")
+            showLoadingError("Renderer initialization failed", e.message ?: "Unknown error")
             return
         }
 
@@ -541,12 +541,12 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             initDuiX()
         } catch (e: Exception) {
             Log.e(TAG, "初始化DUIX失败", e)
-            showLoadingError("初始化失败", e.message ?: "未知错误")
+            showLoadingError("Initialization failed", e.message ?: "Unknown error")
         }
     }
 
     private fun initDuiX() {
-        showLoading("正在加载数字人...")
+        showLoading("Loading digital human...")
         duix = DUIX(mContext, modelUrl, mDUIXRender) { event, msg, info ->
             when (event) {
                 Constant.CALLBACK_EVENT_INIT_READY -> {
@@ -590,7 +590,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         } catch (e: Exception) {
                             Log.e(TAG, "诊断异常: ${e.message}")
                         }
-                        showLoadingError("初始化失败", msg ?: "未知错误")
+                        showLoadingError("Initialization failed", msg ?: "Unknown error")
                     }
                 }
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_START -> {
@@ -767,7 +767,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             }
             State.THINKING -> {
                 // 思考中再次点击：不响应（避免打断 LLM），但提示一下
-                showToast("正在思考，请稍候...")
+                showToast("Thinking, please wait...")
             }
         }
     }
@@ -816,17 +816,17 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     private fun showPermissionRationale(permission: String) {
         try {
             val message = when (permission) {
-                Manifest.permission.RECORD_AUDIO -> "语音对话需要使用麦克风权限。\n\n请在接下来的对话框中允许。"
-                else -> "需要权限: $permission"
+                Manifest.permission.RECORD_AUDIO -> "Voice chat requires microphone permission.\n\nPlease allow in the next dialog."
+                else -> "Permission required: $permission"
             }
             androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("需要权限")
+                .setTitle("Permission Required")
                 .setMessage(message)
-                .setPositiveButton("去开启") { _, _ ->
+                .setPositiveButton("Enable") { _, _ ->
                     // 重新请求权限
                     requestPermission(arrayOf(permission), 1)
                 }
-                .setNegativeButton("取消", null)
+                .setNegativeButton("Cancel", null)
                 .setCancelable(false)
                 .show()
         } catch (e: Exception) {
@@ -842,12 +842,12 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     @Suppress("unused")
     private fun showPermissionSettingsGuide(permission: String) {
         try {
-            val message = "语音对话需要使用 ${permission} 权限。\n\n" +
-                    "您之前选择了\"不再询问\"，请到系统设置 → 应用 → DUIX → 权限 中手动开启。"
+            val message = "Voice chat requires ${permission} permission.\n\n" +
+                    "You previously selected \"Don't ask again\". Please go to System Settings → Apps → DUIX → Permissions to enable it manually."
             androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("权限被禁用")
+                .setTitle("Permission Disabled")
                 .setMessage(message)
-                .setPositiveButton("去设置") { _, _ ->
+                .setPositiveButton("Go to Settings") { _, _ ->
                     try {
                         val intent = android.content.Intent(
                             android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
@@ -856,10 +856,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         startActivity(intent)
                     } catch (e: Exception) {
                         Log.e(TAG, "跳设置异常", e)
-                        showToast("无法打开设置，请手动到系统设置中开启权限")
+                        showToast("Cannot open settings, please enable permission manually in system settings")
                     }
                 }
-                .setNegativeButton("取消", null)
+                .setNegativeButton("Cancel", null)
                 .setCancelable(true)
                 .show()
         } catch (e: Exception) {
@@ -911,7 +911,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         lastPartialTimeMs = System.currentTimeMillis()
                     }
                     runOnUiThread {
-                        updateStatus("听到: $text")
+                        updateStatus("Heard: $text")
                         // 重置文字稳定检测定时器：1.5秒内 partial 不变就自动触发
                         handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
                         if (text.isNotEmpty()) {
@@ -1098,7 +1098,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         cancelThinkingTimeout()
                         setState(State.IDLE)
                         updateStatus("Error: $error")
-                        showAiBubble(thinking = false, text = "出错了: $error")
+                        showAiBubble(thinking = false, text = "Error: $error")
                         scrollMessagesToBottomFinal()
                         updateUI()
                         // 重要：网络错误时不再自动重新监听，否则会陷入无限循环
@@ -1737,10 +1737,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
         // 麦克风按钮标签
         binding.tvMicLabel.text = when (currentState) {
-            State.IDLE -> "按住说话"
-            State.LISTENING -> "松开结束"
-            State.THINKING -> "思考中..."
-            State.SPEAKING -> "点击打断"
+            State.IDLE -> "Press & hold"
+            State.LISTENING -> "Release to end"
+            State.THINKING -> "Thinking..."
+            State.SPEAKING -> "Tap to interrupt"
         }
 
         // 打断提示 (Phase 2.5) - SPEAKING 时显示在数字人上方
@@ -1752,22 +1752,22 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             State.IDLE -> {
                 binding.ivStateIcon.setImageResource(R.drawable.ic_mic)
                 binding.ivStateIcon.setColorFilter(0xFFCCCCCC.toInt())  // 灰
-                binding.tvStateLabel.text = "就绪"
+                binding.tvStateLabel.text = "Ready"
             }
             State.LISTENING -> {
                 binding.ivStateIcon.setImageResource(R.drawable.ic_mic)
                 binding.ivStateIcon.setColorFilter(0xFF4CAF50.toInt())  // 绿
-                binding.tvStateLabel.text = "聆听中"
+                binding.tvStateLabel.text = "Listening"
             }
             State.THINKING -> {
                 binding.ivStateIcon.setImageResource(R.drawable.ic_info)
                 binding.ivStateIcon.setColorFilter(0xFF2196F3.toInt())  // 蓝
-                binding.tvStateLabel.text = "思考中"
+                binding.tvStateLabel.text = "Thinking"
             }
             State.SPEAKING -> {
                 binding.ivStateIcon.setImageResource(R.drawable.ic_play)
                 binding.ivStateIcon.setColorFilter(0xFFE91E63.toInt())  // 粉
-                binding.tvStateLabel.text = "播放中"
+                binding.tvStateLabel.text = "Speaking"
             }
         }
 
@@ -1988,7 +1988,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             // 4) 加一条系统消息提示
             val sysMsg = MessageData(
                 role = MessageData.Role.SYSTEM,
-                text = "新对话已开始",
+                text = "New chat started",
                 timestampMs = System.currentTimeMillis()
             )
             messageAdapter.append(sysMsg)
@@ -2035,7 +2035,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             if (isFloatingWindowRunning()) {
                 Log.i(TAG, "[P2-C] 关闭悬浮窗")
                 stopService(android.content.Intent(this, ai.guiji.duix.test.service.FloatingWindowService::class.java))
-                showToast("已关闭悬浮窗")
+                showToast("Floating window closed")
                 return
             }
             // 权限检查
@@ -2054,10 +2054,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 startService(intent)
             }
             Log.i(TAG, "[P2-C] 已启动悬浮窗服务")
-            showToast("悬浮窗已开启")
+            showToast("Floating window enabled")
         } catch (e: Exception) {
             Log.e(TAG, "[P2-C] toggleFloatingWindow 异常", e)
-            showToast("悬浮窗启动失败")
+            showToast("Floating window failed to start")
         }
     }
 
@@ -2080,9 +2080,9 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     private fun showOverlayPermissionGuide() {
         try {
             androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("需要悬浮窗权限")
-                .setMessage("数字人悬浮窗需要「显示在其他应用上层」权限。\n\n请在接下来的页面中找到 DUIX 并开启。")
-                .setPositiveButton("去开启") { _, _ ->
+                .setTitle("Floating Window Permission Required")
+                .setMessage("The digital human floating window requires the 'Display over other apps' permission.\n\nPlease find DUIX on the next page and enable it.")
+                .setPositiveButton("Enable") { _, _ ->
                     try {
                         val intent = android.content.Intent(
                             android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -2091,10 +2091,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         startActivity(intent)
                     } catch (e: Exception) {
                         Log.e(TAG, "跳设置异常", e)
-                        showToast("无法打开设置，请手动到系统设置中开启")
+                        showToast("Cannot open settings, please enable manually")
                     }
                 }
-                .setNegativeButton("取消", null)
+                .setNegativeButton("Cancel", null)
                 .setCancelable(true)
                 .show()
         } catch (e: Exception) {
@@ -2113,19 +2113,19 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         try {
             val snapshot = messageAdapter.snapshot()
             if (snapshot.isEmpty()) {
-                showToast("没有可重新生成的内容")
+                showToast("Nothing to regenerate")
                 return
             }
             // 1) 找最近的 USER 文本
             val lastUserIndex = snapshot.indexOfLast { it.role == MessageData.Role.USER && it.text.isNotBlank() }
             if (lastUserIndex < 0) {
-                showToast("没有用户消息可重新生成")
+                showToast("No user message to regenerate")
                 return
             }
             val userText = snapshot[lastUserIndex].text
             // 2) 状态检查
             if (currentState == State.THINKING || currentState == State.SPEAKING) {
-                showToast("正在处理中，请稍候")
+                showToast("Processing, please wait")
                 return
             }
             // 3) 删掉最后一条 AI 消息（重新生成）
@@ -2145,7 +2145,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             Log.i(TAG, "[DIAG] regenerateLastAi 完成: userText='${userText.take(30)}...'")
         } catch (e: Exception) {
             Log.e(TAG, "[DIAG] regenerateLastAi 异常", e)
-            showToast("重新生成失败")
+            showToast("Regeneration failed")
         }
     }
 
@@ -2283,7 +2283,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
         // 引擎信息
         val tvEngineInfo = dialogView.findViewById<TextView>(R.id.tvEngineInfo)
-        tvEngineInfo.text = "当前: LLM=${getLlmEngineDisplayName(currentLlmEngine)} | ASR=${getAsrEngineDisplayName(currentAsrEngine)} | TTS=${getTtsEngineDisplayName(currentTtsEngine)}"
+        tvEngineInfo.text = "Current: LLM=${getLlmEngineDisplayName(currentLlmEngine)} | ASR=${getAsrEngineDisplayName(currentAsrEngine)} | TTS=${getTtsEngineDisplayName(currentTtsEngine)}"
 
         // [E2E自测] 端到端自测按钮
         val btnSelfTest = dialogView.findViewById<TextView>(R.id.btnSelfTest)
@@ -2432,7 +2432,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         val newEngine = asrEngineCycle[nextIndex]
         currentAsrEngine = newEngine
         saveAsrEnginePreference(newEngine)
-        showToast("ASR: ${getAsrEngineDisplayName(newEngine)} (骨架阶段未接通 HybridAsrService)")
+        showToast("ASR: ${getAsrEngineDisplayName(newEngine)} (skeleton phase, not connected to HybridAsrService)")
         updateUI()
         updateStatus("ASR: ${getAsrEngineDisplayName(newEngine)}")
     }
@@ -2531,7 +2531,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         } catch (e: Exception) {
             Log.e(TAG, "保存麦克风交互模式偏好失败", e)
         }
-        showToast("麦克风模式: ${if (newMode == MicInteractionMode.LONG_PRESS) "长按说话" else "再按结束"}")
+        showToast("Mic mode: ${if (newMode == MicInteractionMode.LONG_PRESS) "Long press to speak" else "Press again to end"}")
         Log.i(TAG, "切换麦克风交互模式: $newMode")
     }
 
@@ -2775,11 +2775,11 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
      */
     private fun startPipelineSelfTest(rounds: Int = 3, mode: PipelineSelfTest.TestMode = PipelineSelfTest.TestMode.TEXT_ONLY) {
         if (isSelfTestRunning) {
-            showToast("自测已在运行中")
+            showToast("Self-test already running")
             return
         }
         if (!_isDuiXReady) {
-            showToast("数字人未就绪，无法自测")
+            showToast("Digital human not ready, cannot test")
             return
         }
         isSelfTestRunning = true
@@ -2787,8 +2787,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         cancelAutoListen()
         pipelineSelfTest = PipelineSelfTest(this)
         pipelineSelfTest?.start(rounds, mode)
-        val modeName = if (mode == PipelineSelfTest.TestMode.WITH_ASR) "ASR+全链路" else "文本"
-        showToast("自测开始: $rounds 轮$modeName 对话")
+        val modeName = if (mode == PipelineSelfTest.TestMode.WITH_ASR) "ASR+Full pipeline" else "Text"
+        showToast("Self-test started: $rounds rounds $modeName chat")
     }
 
     /**
@@ -2799,17 +2799,17 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         try {
             val passed = results.count { it.asrSuccess && it.llmSuccess && it.ttsSuccess && it.stateRecovery }
             val failed = results.size - passed
-            val title = if (failed == 0) "自测全部通过" else "自测完成 (${failed}项失败)"
+            val title = if (failed == 0) "All tests passed" else "Test completed (${failed} failed)"
 
             val message = buildString {
                 results.forEach { r ->
                     val allPass = r.asrSuccess && r.llmSuccess && r.ttsSuccess && r.stateRecovery
                     val icon = if (allPass) "✓" else "✗"
-                    append("$icon 第${r.round}轮: ${r.durationMs}ms")
-                    if (r.testMode == PipelineSelfTest.TestMode.WITH_ASR && !r.asrSuccess) append(" [ASR失败]")
-                    if (!r.llmSuccess) append(" [LLM失败]")
-                    if (!r.ttsSuccess) append(" [TTS失败]")
-                    if (!r.stateRecovery) append(" [状态未恢复]")
+                    append("$icon Round ${r.round}: ${r.durationMs}ms")
+                    if (r.testMode == PipelineSelfTest.TestMode.WITH_ASR && !r.asrSuccess) append(" [ASR failed]")
+                    if (!r.llmSuccess) append(" [LLM failed]")
+                    if (!r.ttsSuccess) append(" [TTS failed]")
+                    if (!r.stateRecovery) append(" [State not recovered]")
                     // 各阶段耗时
                     val t = r.stageTiming
                     if (t.asrStartMs > 0 && t.asrEndMs > 0) append(" ASR=${t.asrEndMs - t.asrStartMs}ms")
@@ -2817,17 +2817,17 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     if (t.speakingStartMs > 0 && t.speakingEndMs > 0) append(" TTS=${t.speakingEndMs - t.speakingStartMs}ms")
                     r.errorDetail?.let { append(" - $it") }
                     // 自动修复信息
-                    if (r.retryCount > 0) append(" [重试${r.retryCount}次]")
+                    if (r.retryCount > 0) append(" [Retried ${r.retryCount}x]")
                     if (r.autoFixAction != PipelineSelfTest.AutoFixAction.NONE) {
-                        append(" [修复:${r.autoFixAction.name}")
-                        if (r.autoFixSucceeded) append("(成功)")
-                        else append("(失败)")
+                        append(" [Fix:${r.autoFixAction.name}")
+                        if (r.autoFixSucceeded) append("(success)")
+                        else append("(failed)")
                         append("]")
                     }
                     // 诊断信息
                     r.diagnostic?.let { d ->
                         append("\n  → ${d.likelyCause}")
-                        append("\n  → 建议: ${d.fixSuggestion}")
+                        append("\n  → Suggestion: ${d.fixSuggestion}")
                     }
                     append("\n")
                 }
@@ -2837,7 +2837,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle(title)
                 .setMessage(message)
-                .setPositiveButton("确定", null)
+                .setPositiveButton("OK", null)
                 .setCancelable(true)
                 .show()
         } catch (e: Exception) {
@@ -2863,42 +2863,42 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             val summary = prefs.getString("last_test_summary", "")
 
             if (lastTestTime == 0L) {
-                showToast("暂无自测记录")
+                showToast("No test records yet")
                 return
             }
 
             val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.CHINA)
                 .format(java.util.Date(lastTestTime))
             val healthScore = healthMonitor?.getHealthScore()
-            val scoreStr = healthScore?.let { "健康评分: ${it.score}/100" } ?: ""
+            val scoreStr = healthScore?.let { "Health score: ${it.score}/100" } ?: ""
             val issuesStr = healthScore?.let {
-                if (it.issues.isNotEmpty()) "\n当前问题: ${it.issues.joinToString(", ")}" else ""
+                if (it.issues.isNotEmpty()) "\nCurrent issues: ${it.issues.joinToString(", ")}" else ""
             } ?: ""
 
             val message = buildString {
-                append("最近自测: $timeStr\n")
-                append("模式: $mode\n")
-                append("结果: $passed/$total 通过, $failed 失败\n")
+                append("Last test: $timeStr\n")
+                append("Mode: $mode\n")
+                append("Result: $passed/$total passed, $failed failed\n")
                 if (autoFixAttempts > 0) {
-                    append("自动修复: $autoFixAttempts 次尝试, $autoFixSuccesses 次成功\n")
+                    append("Auto-fix: $autoFixAttempts attempts, $autoFixSuccesses succeeded\n")
                 }
                 if (scoreStr.isNotEmpty()) append("\n$scoreStr$issuesStr")
-                if (!summary.isNullOrEmpty()) append("\n\n--- 详细 ---\n$summary")
+                if (!summary.isNullOrEmpty()) append("\n\n--- Details ---\n$summary")
             }
 
             androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("自测记录")
+                .setTitle("Test Records")
                 .setMessage(message)
-                .setPositiveButton("确定", null)
-                .setNeutralButton("清除记录") { _, _ ->
+                .setPositiveButton("OK", null)
+                .setNeutralButton("Clear records") { _, _ ->
                     prefs.edit().clear().apply()
-                    showToast("自测记录已清除")
+                    showToast("Test records cleared")
                 }
                 .setCancelable(true)
                 .show()
         } catch (e: Exception) {
             Log.e(TAG, "showSelfTestHistory 异常", e)
-            showToast("读取自测记录失败")
+            showToast("Failed to read test records")
         }
     }
 
