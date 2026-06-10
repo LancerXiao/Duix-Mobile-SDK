@@ -1,29 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-    终极简化版主题
-    - 保留AppCompat兼容性
-    - 不设置windowBackground（避免edge-to-edge下白屏）
-    - 实际UI背景由Activity在onCreate中用代码设置
-    - 蓝青品牌色 #00D4FF
+    统一深色科技风主题
+    - 品牌色：紫罗兰 #7C3AED → 青色 #06B6D4
+    - 深色背景 #06060F
+    - 无 ActionBar（各 Activity 自定义 Toolbar）
     -->
-    <style name="Theme.DUIX.Test" parent="Theme.AppCompat.Light.NoActionBar">
+    <style name="Theme.DUIX.Test" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowIsTranslucent">false</item>
         <item name="android:windowIsFloating">false</item>
-        <item name="android:statusBarColor">#FF0099CC</item>
-        <item name="android:navigationBarColor">#FF0A0A1A</item>
-        <item name="colorPrimary">#00D4FF</item>
-        <item name="colorPrimaryDark">#0099CC</item>
-        <item name="colorAccent">#00D4FF</item>
+        <item name="android:statusBarColor">@color/bg_main</item>
+        <item name="android:navigationBarColor">@color/bg_main</item>
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryDark">@color/primary_dark</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@color/bg_main</item>
     </style>
 
     <!-- MainActivity专用：使用系统主题，避免AppCompat在Android 15上的兼容性问题 -->
-    <style name="Theme.DUIX.Main" parent="@android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.DUIX.Main" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowIsTranslucent">false</item>
         <item name="android:windowIsFloating">false</item>
-        <item name="android:statusBarColor">#FF0099CC</item>
-        <item name="android:navigationBarColor">#FF0A0A1A</item>
+        <item name="android:statusBarColor">@color/bg_main</item>
+        <item name="android:navigationBarColor">@color/bg_main</item>
+        <item name="android:windowBackground">@color/bg_main</item>
     </style>
 </resources>
