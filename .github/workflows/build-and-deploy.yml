@@ -127,68 +127,65 @@ jobs:
           ls -la /var/www/enlyai.com/downloads/duix/
           chmod -R 755 /var/www/enlyai.com/downloads/
 
-          echo "=== All nginx config files ==="
-          find /etc/nginx -name "*.conf" -type f 2>/dev/null
+          # Python script to precisely add /downloads/ location block to the right server block
+          python3 << 'PYSCRIPT'
+          import sys, re
 
-          # Show all relevant config files for debugging
-          for f in /etc/nginx/conf.d/enlyai.com.conf /etc/nginx/conf.d/api.enlyai.com.conf /etc/nginx/conf.d/download.conf; do
-            if [ -f "$f" ]; then
-              echo "=== Content of $f ==="
-              cat "$f"
-              echo ""
-              echo "=== End of $f ==="
-            fi
-          done
+          def add_downloads_location(conf_file, server_name_pattern):
+              """Add /downloads/ location block to the server block matching server_name_pattern."""
+              with open(conf_file) as f:
+                  content = f.read()
 
-          # Function to add /downloads/ location block to a config file
-          add_downloads_location() {
-            local CONF="$1"
-            if [ ! -f "$CONF" ]; then
-              echo "File not found: $CONF"
-              return 1
-            fi
+              # First, remove any existing /downloads/ location blocks
+              content = re.sub(r'\n[ \t]*location\s+/downloads/\s*\{[^}]*\}', '', content)
 
-            # Remove any existing /downloads/ location blocks from previous attempts
-            if grep -q "location /downloads/" "$CONF" 2>/dev/null; then
-              echo "Removing existing /downloads/ location block from $CONF..."
-              perl -i -0pe 's/\n[[:space:]]*location\s+\/downloads\/\s*\{[^}]*\}//g' "$CONF"
-              echo "Removed existing /downloads/ location block"
-            fi
+              lines = content.split('\n')
+              depth = 0
+              in_target = False
+              target_depth = 0
+              insert_index = -1
 
-            # Insert location block before the LAST closing brace in the file
-            awk '
-            BEGIN { last_brace = 0; total = 0 }
-            /^[[:space:]]*}[[:space:]]*$/ { last_brace = NR }
-            { lines[NR] = $0; total = NR }
-            END {
-              for (i = 1; i <= total; i++) {
-                if (i == last_brace) {
-                  print "    location /downloads/ {"
-                  print "        alias /var/www/enlyai.com/downloads/;"
-                  print "        autoindex off;"
-                  print "    }"
-                  print ""
-                }
-                print lines[i]
-              }
-            }' "$CONF" > "${CONF}.tmp" && mv "${CONF}.tmp" "$CONF"
+              for i, line in enumerate(lines):
+                  opens = line.count('{')
+                  closes = line.count('}')
+                  new_depth = depth + opens - closes
 
-            echo "Added /downloads/ location block to $CONF"
-          }
+                  if in_target and new_depth < target_depth:
+                      # This line closes the target server block
+                      insert_index = i
+                      in_target = False
+                      break
 
-          # Target enlyai.com.conf (handles enlyai.com and www.enlyai.com requests)
-          ENLYAI_CONF="/etc/nginx/conf.d/enlyai.com.conf"
-          if [ -f "$ENLYAI_CONF" ]; then
-            add_downloads_location "$ENLYAI_CONF"
-          else
-            echo "WARNING: $ENLYAI_CONF not found!"
-          fi
+                  depth = new_depth
 
-          # Also add to api.enlyai.com.conf for consistency (handles api.enlyai.com)
-          API_CONF="/etc/nginx/conf.d/api.enlyai.com.conf"
-          if [ -f "$API_CONF" ]; then
-            add_downloads_location "$API_CONF"
-          fi
+                  if re.search(server_name_pattern, line):
+                      in_target = True
+                      target_depth = depth
+
+              if insert_index >= 0:
+                  location_block = [
+                      '',
+                      '    location /downloads/ {',
+                      '        alias /var/www/enlyai.com/downloads/;',
+                      '        autoindex off;',
+                      '    }',
+                  ]
+                  lines = lines[:insert_index] + location_block + lines[insert_index:]
+
+                  with open(conf_file, 'w') as f:
+                      f.write('\n'.join(lines))
+
+                  print(f"Added /downloads/ location block to {conf_file} at line {insert_index}")
+              else:
+                  print(f"WARNING: Could not find target server block in {conf_file}")
+
+          # Add to enlyai.com.conf - target the HTTPS server block for enlyai.com (not www.enlyai.com)
+          # server_name enlyai.com; (without www.) in a listen 443 block
+          add_downloads_location('/etc/nginx/conf.d/enlyai.com.conf', r'server_name\s+enlyai\.com\s*;')
+
+          # Also add to api.enlyai.com.conf for consistency
+          add_downloads_location('/etc/nginx/conf.d/api.enlyai.com.conf', r'server_name\s+api\.enlyai\.com\s*;')
+          PYSCRIPT
 
           # Clean up any broken downloads.conf from previous attempts
           rm -f /etc/nginx/conf.d/downloads.conf
