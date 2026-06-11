@@ -118,33 +118,121 @@ jobs:
           scp -i ~/.ssh/deploy_key -P ${{ secrets.ECS_PORT }} ${{ steps.version.outputs.apk }} ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:$DEPLOY_DIR/duix_digital_human.apk
           scp -i ~/.ssh/deploy_key -P ${{ secrets.ECS_PORT }} version.json ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:$DEPLOY_DIR/version.json
           scp -i ~/.ssh/deploy_key -P ${{ secrets.ECS_PORT }} deploy/download-page.html ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:$DEPLOY_DIR/index.html
-          # Ensure nginx serves /downloads/ as static files
-          ssh -i ~/.ssh/deploy_key -p ${{ secrets.ECS_PORT }} ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }} "bash -s" << 'NGINX_SETUP'
-          # Remove any broken downloads.conf from previous attempt
-          rm -f /etc/nginx/conf.d/downloads.conf
 
-          # Find the main server config file that handles enlyai.com
-          MAIN_CONF=$(grep -rl "server_name.*enlyai" /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null | head -1)
+          # Configure nginx to serve /downloads/ as static files
+          ssh -i ~/.ssh/deploy_key -p ${{ secrets.ECS_PORT }} ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }} "bash -s" << 'NGINX_SETUP'
+          set -e
+
+          echo "=== Verifying deployed files ==="
+          ls -la /var/www/enlyai.com/downloads/duix/
+          chmod -R 755 /var/www/enlyai.com/downloads/
+
+          echo "=== Nginx config files ==="
+          find /etc/nginx -name "*.conf" -type f 2>/dev/null
+
+          # Find the HTTPS server config for enlyai.com
+          MAIN_CONF=""
+          for dir in /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ /etc/nginx/sites-available/; do
+            if [ -d "$dir" ]; then
+              for f in "$dir"*.conf "$dir"*; do
+                [ -f "$f" ] || continue
+                if grep -q "server_name.*enlyai" "$f" 2>/dev/null && grep -q "listen.*443" "$f" 2>/dev/null; then
+                  MAIN_CONF="$f"
+                  break 2
+                fi
+              done
+            fi
+          done
+
+          # Fallback: any config with server_name enlyai
           if [ -z "$MAIN_CONF" ]; then
-            MAIN_CONF=$(grep -rl "listen.*80\|listen.*443" /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null | head -1)
+            for dir in /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ /etc/nginx/sites-available/; do
+              if [ -d "$dir" ]; then
+                MAIN_CONF=$(grep -rl "server_name.*enlyai" "$dir" 2>/dev/null | head -1)
+                [ -n "$MAIN_CONF" ] && break
+              fi
+            done
           fi
 
-          if [ -n "$MAIN_CONF" ]; then
-            # Check if location /downloads/ already exists in the config
-            if ! grep -q "location /downloads/" "$MAIN_CONF" 2>/dev/null; then
-              # Insert location block before the closing } of the server block
-              sed -i '/^[[:space:]]*}/i\
-              location /downloads/ {\
-                  alias /var/www/enlyai.com/downloads/;\
-                  autoindex off;\
-              }' "$MAIN_CONF"
-              echo "Added /downloads/ location to $MAIN_CONF"
-            else
-              echo "/downloads/ location already exists in $MAIN_CONF"
-            fi
-            nginx -t 2>&1 && nginx -s reload 2>&1 && echo "nginx reloaded successfully" || echo "nginx reload failed"
+          # Last fallback: any config with listen 443
+          if [ -z "$MAIN_CONF" ]; then
+            for dir in /etc/nginx/sites-enabled/ /etc/nginx/conf.d/; do
+              if [ -d "$dir" ]; then
+                MAIN_CONF=$(grep -rl "listen.*443" "$dir" 2>/dev/null | head -1)
+                [ -n "$MAIN_CONF" ] && break
+              fi
+            done
+          fi
+
+          if [ -z "$MAIN_CONF" ]; then
+            echo "ERROR: Could not find nginx server config for enlyai.com"
+            echo "=== Full nginx config ==="
+            nginx -T 2>&1 | head -100
+            exit 1
+          fi
+
+          echo "Main config: $MAIN_CONF"
+          echo "=== Current config ==="
+          cat "$MAIN_CONF"
+          echo ""
+          echo "=== End of current config ==="
+
+          # Remove any existing /downloads/ location blocks from previous attempts
+          if grep -q "location /downloads/" "$MAIN_CONF" 2>/dev/null; then
+            echo "Removing existing /downloads/ location block..."
+            # Use perl to remove the location block (handles multi-line)
+            perl -i -0pe 's/\n[[:space:]]*location\s+\/downloads\/\s*\{[^}]*\}//g' "$MAIN_CONF"
+            echo "Removed existing /downloads/ location block"
+          fi
+
+          # Also clean up any broken downloads.conf from previous attempts
+          rm -f /etc/nginx/conf.d/downloads.conf
+
+          # Insert location block before the LAST closing brace in the file
+          # The last } is typically the server block's closing brace
+          awk '
+          BEGIN { last_brace = 0; total = 0 }
+          /^[[:space:]]*}[[:space:]]*$/ { last_brace = NR }
+          { lines[NR] = $0; total = NR }
+          END {
+            for (i = 1; i <= total; i++) {
+              if (i == last_brace) {
+                print "    location /downloads/ {"
+                print "        alias /var/www/enlyai.com/downloads/;"
+                print "        autoindex off;"
+                print "    }"
+                print ""
+              }
+              print lines[i]
+            }
+          }' "$MAIN_CONF" > "${MAIN_CONF}.tmp" && mv "${MAIN_CONF}.tmp" "$MAIN_CONF"
+
+          echo "Added /downloads/ location block before last closing brace"
+          echo "=== Updated config ==="
+          cat "$MAIN_CONF"
+          echo ""
+          echo "=== End of updated config ==="
+
+          # Test nginx config
+          echo "Testing nginx config..."
+          nginx -t 2>&1
+
+          # Reload nginx
+          echo "Reloading nginx..."
+          nginx -s reload 2>&1
+          echo "nginx reloaded successfully"
+
+          # Verify deployment works
+          echo "Verifying deployment..."
+          sleep 2
+          RESPONSE=$(curl -sI "http://localhost/downloads/duix/version.json" 2>&1 | head -5)
+          echo "$RESPONSE"
+          if echo "$RESPONSE" | grep -qi "application/json\|text/plain\|200 OK"; then
+            echo "SUCCESS: /downloads/ is being served correctly"
           else
-            echo "Could not find main nginx config, skipping nginx setup"
+            echo "WARNING: /downloads/ may not be configured correctly"
+            echo "Trying with 127.0.0.1 and Host header..."
+            curl -sI -H "Host: enlyai.com" "http://127.0.0.1/downloads/duix/version.json" 2>&1 | head -5
           fi
           NGINX_SETUP
           echo "Deployed to: https://www.enlyai.com/downloads/duix/"
