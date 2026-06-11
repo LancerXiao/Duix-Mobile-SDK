@@ -127,91 +127,71 @@ jobs:
           ls -la /var/www/enlyai.com/downloads/duix/
           chmod -R 755 /var/www/enlyai.com/downloads/
 
-          echo "=== Nginx config files ==="
+          echo "=== All nginx config files ==="
           find /etc/nginx -name "*.conf" -type f 2>/dev/null
 
-          # Find the HTTPS server config for enlyai.com
-          MAIN_CONF=""
-          for dir in /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ /etc/nginx/sites-available/; do
-            if [ -d "$dir" ]; then
-              for f in "$dir"*.conf "$dir"*; do
-                [ -f "$f" ] || continue
-                if grep -q "server_name.*enlyai" "$f" 2>/dev/null && grep -q "listen.*443" "$f" 2>/dev/null; then
-                  MAIN_CONF="$f"
-                  break 2
-                fi
-              done
+          # Show all relevant config files for debugging
+          for f in /etc/nginx/conf.d/enlyai.com.conf /etc/nginx/conf.d/api.enlyai.com.conf /etc/nginx/conf.d/download.conf; do
+            if [ -f "$f" ]; then
+              echo "=== Content of $f ==="
+              cat "$f"
+              echo ""
+              echo "=== End of $f ==="
             fi
           done
 
-          # Fallback: any config with server_name enlyai
-          if [ -z "$MAIN_CONF" ]; then
-            for dir in /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ /etc/nginx/sites-available/; do
-              if [ -d "$dir" ]; then
-                MAIN_CONF=$(grep -rl "server_name.*enlyai" "$dir" 2>/dev/null | head -1)
-                [ -n "$MAIN_CONF" ] && break
-              fi
-            done
-          fi
+          # Function to add /downloads/ location block to a config file
+          add_downloads_location() {
+            local CONF="$1"
+            if [ ! -f "$CONF" ]; then
+              echo "File not found: $CONF"
+              return 1
+            fi
 
-          # Last fallback: any config with listen 443
-          if [ -z "$MAIN_CONF" ]; then
-            for dir in /etc/nginx/sites-enabled/ /etc/nginx/conf.d/; do
-              if [ -d "$dir" ]; then
-                MAIN_CONF=$(grep -rl "listen.*443" "$dir" 2>/dev/null | head -1)
-                [ -n "$MAIN_CONF" ] && break
-              fi
-            done
-          fi
+            # Remove any existing /downloads/ location blocks from previous attempts
+            if grep -q "location /downloads/" "$CONF" 2>/dev/null; then
+              echo "Removing existing /downloads/ location block from $CONF..."
+              perl -i -0pe 's/\n[[:space:]]*location\s+\/downloads\/\s*\{[^}]*\}//g' "$CONF"
+              echo "Removed existing /downloads/ location block"
+            fi
 
-          if [ -z "$MAIN_CONF" ]; then
-            echo "ERROR: Could not find nginx server config for enlyai.com"
-            echo "=== Full nginx config ==="
-            nginx -T 2>&1 | head -100
-            exit 1
-          fi
-
-          echo "Main config: $MAIN_CONF"
-          echo "=== Current config ==="
-          cat "$MAIN_CONF"
-          echo ""
-          echo "=== End of current config ==="
-
-          # Remove any existing /downloads/ location blocks from previous attempts
-          if grep -q "location /downloads/" "$MAIN_CONF" 2>/dev/null; then
-            echo "Removing existing /downloads/ location block..."
-            # Use perl to remove the location block (handles multi-line)
-            perl -i -0pe 's/\n[[:space:]]*location\s+\/downloads\/\s*\{[^}]*\}//g' "$MAIN_CONF"
-            echo "Removed existing /downloads/ location block"
-          fi
-
-          # Also clean up any broken downloads.conf from previous attempts
-          rm -f /etc/nginx/conf.d/downloads.conf
-
-          # Insert location block before the LAST closing brace in the file
-          # The last } is typically the server block's closing brace
-          awk '
-          BEGIN { last_brace = 0; total = 0 }
-          /^[[:space:]]*}[[:space:]]*$/ { last_brace = NR }
-          { lines[NR] = $0; total = NR }
-          END {
-            for (i = 1; i <= total; i++) {
-              if (i == last_brace) {
-                print "    location /downloads/ {"
-                print "        alias /var/www/enlyai.com/downloads/;"
-                print "        autoindex off;"
-                print "    }"
-                print ""
+            # Insert location block before the LAST closing brace in the file
+            awk '
+            BEGIN { last_brace = 0; total = 0 }
+            /^[[:space:]]*}[[:space:]]*$/ { last_brace = NR }
+            { lines[NR] = $0; total = NR }
+            END {
+              for (i = 1; i <= total; i++) {
+                if (i == last_brace) {
+                  print "    location /downloads/ {"
+                  print "        alias /var/www/enlyai.com/downloads/;"
+                  print "        autoindex off;"
+                  print "    }"
+                  print ""
+                }
+                print lines[i]
               }
-              print lines[i]
-            }
-          }' "$MAIN_CONF" > "${MAIN_CONF}.tmp" && mv "${MAIN_CONF}.tmp" "$MAIN_CONF"
+            }' "$CONF" > "${CONF}.tmp" && mv "${CONF}.tmp" "$CONF"
 
-          echo "Added /downloads/ location block before last closing brace"
-          echo "=== Updated config ==="
-          cat "$MAIN_CONF"
-          echo ""
-          echo "=== End of updated config ==="
+            echo "Added /downloads/ location block to $CONF"
+          }
+
+          # Target enlyai.com.conf (handles enlyai.com and www.enlyai.com requests)
+          ENLYAI_CONF="/etc/nginx/conf.d/enlyai.com.conf"
+          if [ -f "$ENLYAI_CONF" ]; then
+            add_downloads_location "$ENLYAI_CONF"
+          else
+            echo "WARNING: $ENLYAI_CONF not found!"
+          fi
+
+          # Also add to api.enlyai.com.conf for consistency (handles api.enlyai.com)
+          API_CONF="/etc/nginx/conf.d/api.enlyai.com.conf"
+          if [ -f "$API_CONF" ]; then
+            add_downloads_location "$API_CONF"
+          fi
+
+          # Clean up any broken downloads.conf from previous attempts
+          rm -f /etc/nginx/conf.d/downloads.conf
 
           # Test nginx config
           echo "Testing nginx config..."
@@ -225,14 +205,15 @@ jobs:
           # Verify deployment works
           echo "Verifying deployment..."
           sleep 2
-          RESPONSE=$(curl -sI "http://localhost/downloads/duix/version.json" 2>&1 | head -5)
+          # Test with enlyai.com Host header (the main domain users access)
+          RESPONSE=$(curl -sI -H "Host: enlyai.com" "http://127.0.0.1/downloads/duix/version.json" 2>&1 | head -5)
           echo "$RESPONSE"
           if echo "$RESPONSE" | grep -qi "application/json\|text/plain\|200 OK"; then
-            echo "SUCCESS: /downloads/ is being served correctly"
+            echo "SUCCESS: /downloads/ is being served correctly on enlyai.com"
           else
-            echo "WARNING: /downloads/ may not be configured correctly"
-            echo "Trying with 127.0.0.1 and Host header..."
-            curl -sI -H "Host: enlyai.com" "http://127.0.0.1/downloads/duix/version.json" 2>&1 | head -5
+            echo "WARNING: /downloads/ may not be configured correctly on enlyai.com"
+            echo "Trying HTTPS directly..."
+            curl -skI "https://127.0.0.1/downloads/duix/version.json" -H "Host: enlyai.com" 2>&1 | head -5
           fi
           NGINX_SETUP
           echo "Deployed to: https://www.enlyai.com/downloads/duix/"
