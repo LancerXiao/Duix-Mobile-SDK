@@ -84,7 +84,7 @@ class LlmService {
         requestBody.put("model", model)
         requestBody.put("messages", messages)
         requestBody.put("stream", true)
-        requestBody.put("max_tokens", 512)
+        requestBody.put("max_tokens", 256)
         requestBody.put("temperature", 0.7)
 
         val body = requestBody.toString()
@@ -181,7 +181,12 @@ class LlmService {
                                 val choices = json.optJSONArray("choices")
                                 if (choices != null && choices.length() > 0) {
                                     val delta = choices.getJSONObject(0).optJSONObject("delta")
-                                    val content = delta?.optString("content", "") ?: ""
+                                    // optString 对 JSON null 返回字符串 "null"，必须用 isNull 检查
+                                    val content = if (delta != null && !delta.isNull("content")) {
+                                        delta.getString("content")
+                                    } else {
+                                        ""
+                                    }
                                     if (content.isNotEmpty()) {
                                         fullText.append(content)
                                         lastValidText = content

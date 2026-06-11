@@ -49,18 +49,18 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
     companion object {
         const val GL_CONTEXT_VERSION = 2
-        private const val AUTO_LISTEN_DELAY_MS = 1200L
+        private const val AUTO_LISTEN_DELAY_MS = 800L
         // 数字人说话结束后 auto-listen 的额外延迟，给音频硬件足够时间停止播放
         // 防止 ASR 录到数字人自己的声音（回声问题）
-        private const val POST_SPEAKING_LISTEN_DELAY_MS = 2000L
+        private const val POST_SPEAKING_LISTEN_DELAY_MS = 1200L
         // ASR partial 文字稳定超时（毫秒）：超过这个时间 partial 不变就认为说话结束
-        private const val STABLE_TEXT_TIMEOUT_MS = 1500L
+        private const val STABLE_TEXT_TIMEOUT_MS = 1200L
         // [Bug fix] SPEAKING 状态超时保护：如果 DUIX SDK 没有回调 AUDIO_PLAY_END，
         // 4 秒后自动恢复到 IDLE，防止状态卡死
         private const val SPEAKING_TIMEOUT_MS = 4000L
         // [Bug fix] THINKING 状态超时保护：如果 LLM 请求挂起无响应，
-        // 30 秒后自动恢复到 IDLE，防止状态永远卡在 THINKING
-        private const val THINKING_TIMEOUT_MS = 30000L
+        // 15 秒后自动恢复到 IDLE，防止状态永远卡在 THINKING
+        private const val THINKING_TIMEOUT_MS = 15000L
         // 音频采样率常量
         // Qwen TTS (qwen3-tts-flash-realtime) 固定输出 24kHz PCM
         private const val QWEN_TTS_SAMPLE_RATE = 24000
@@ -244,9 +244,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         } catch (e: Exception) {
             Log.e(TAG, "autoFinalize: 停止ASR异常", e)
         }
-        // [Bug fix] 不在这里设置 THINKING 状态和显示气泡！
-        // sendToLlm → invokeLlm 会处理状态转换和 UI 更新
-        // 之前先设 THINKING 再调 sendToLlm，导致 sendToLlm 检查 THINKING 时直接 return
+        // 直接进入 LLM 链路，不经过 stopListening（避免状态竞争）
         sendToLlm(text)
     }
 
@@ -662,32 +660,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             mainHandler.postDelayed({ playGreeting() }, 800L)
             // 初始化完成后自动开始监听，参考 Call Annie 即时响应设计
             scheduleAutoListen()
-            // [E2E自测] 启动时自动运行一轮快速自测（5s 后，等 greeting 播完）
-            runStartupSelfTest()
         }
-    }
-
-    /**
-     * [E2E自测] 启动时自动运行一轮快速自测
-     * 在 greeting 播放完成后（5s 延迟）自动运行 TEXT_ONLY 模式 1 轮
-     * 仅在首次启动时运行（通过 SharedPreferences 记录）
-     */
-    private fun runStartupSelfTest() {
-        val prefs = getSharedPreferences("pipeline_self_test", MODE_PRIVATE)
-        val lastTestTime = prefs.getLong("last_test_time", 0L)
-        val timeSinceLastTest = System.currentTimeMillis() - lastTestTime
-        // 距离上次自测超过 10 分钟才自动运行（避免频繁自测）
-        if (timeSinceLastTest < 10 * 60 * 1000L) {
-            Log.i(TAG, "[SELF-TEST] 距上次自测仅 ${timeSinceLastTest / 1000}s，跳过启动自测")
-            return
-        }
-        mainHandler.postDelayed({
-            if (currentState == State.IDLE && _isDuiXReady && pipelineSelfTest == null) {
-                Log.i(TAG, "[SELF-TEST] 启动自动自测: TEXT_ONLY 1轮")
-                pipelineSelfTest = PipelineSelfTest(this)
-                pipelineSelfTest?.start(rounds = 1, mode = PipelineSelfTest.TestMode.TEXT_ONLY)
-            }
-        }, 5000L)
     }
 
     /**
@@ -1002,22 +975,21 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             Log.e(TAG, "停止语音识别异常", e)
         }
         // 取出累积的 partial 文本，停止时主动发送给 LLM
-        // 解决"VAD 未触发时数字人不响应"的核心 bug
         val pendingText = lastPartialText
         lastPartialText = ""
-        // 立即更新UI状态，否则按钮会一直显示红色脉冲和"松开结束"标签
-        setState(State.IDLE)
-        updateStatus("Stopped")
-        updateUI()
-        cancelAutoListen()
 
-        // 如果有累积的 partial 文本，发送给 LLM
         if (pendingText.isNotEmpty()) {
             Log.i(TAG, "用户停止，发送累积的 ASR 文本: $pendingText")
-            updateStatus("Recognized")
+            // 直接进入 LLM 链路（sendToLlm 会处理 IDLE→THINKING 状态转换）
+            // 不再先设 IDLE 再调 sendToLlm，避免状态闪烁
+            cancelAutoListen()
             sendToLlm(pendingText)
         } else {
             Log.i(TAG, "用户停止，无累积文本可发送")
+            setState(State.IDLE)
+            updateStatus("Ready")
+            updateUI()
+            cancelAutoListen()
         }
     }
 
@@ -1027,7 +999,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             return
         }
         Log.i(TAG, "[DIAG] sendToLlm: 发送文本到LLM, text='${text.take(50)}...'")
-        // [Bug fix] SPEAKING 时也不允许新请求，避免添加 USER 消息却无 AI 回复
+        // SPEAKING/THINKING 时不允许新请求，避免添加 USER 消息却无 AI 回复
+        // LISTENING 允许（从 stopListening 直接进入的场景）
         if (currentState == State.THINKING || currentState == State.SPEAKING) return
 
         // 检查网络连接
@@ -1055,6 +1028,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             Log.w(TAG, "[BUG-FIX] invokeLlm: 当前状态=$currentState，跳过")
             return
         }
+        // 如果从 LISTENING 进入，先回到 IDLE（状态机要求 IDLE→THINKING）
+        if (currentState == State.LISTENING) {
+            currentState = State.IDLE
+        }
         setState(State.THINKING)
         updateStatus("Thinking")
         updateUI()
@@ -1068,6 +1045,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         try {
             llmService.chat(text, object : LlmService.Callback {
                 override fun onToken(token: String) {
+                    // 过滤 "null" token（LLM API 有时返回 JSON null 被转为字符串 "null"）
+                    if (token.equals("null", ignoreCase = true)) return
                     fullResponse.append(token)
                     runOnUiThread {
                         showAiBubble(thinking = false, text = fullResponse.toString())
@@ -1079,10 +1058,14 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     Log.i(TAG, "[DIAG] LLM.onComplete: fullText长度=${fullText.length}, fullText='${fullText.take(50)}...'")
                     runOnUiThread {
                         cancelThinkingTimeout()
-                        showAiBubble(thinking = false, text = fullText)
+                        // 过滤 "null" 字符串（LLM API 有时返回 JSON null 被转为字符串 "null"）
+                        val cleanText = fullText.trim().let {
+                            if (it.equals("null", ignoreCase = true) || it == "Null") "" else fullText
+                        }
+                        showAiBubble(thinking = false, text = cleanText)
                         scrollMessagesToBottomFinal()  // LLM 完成后确保滚动到底部
-                        if (fullText.isNotEmpty()) {
-                            synthesizeAndPlay(fullText)
+                        if (cleanText.isNotEmpty()) {
+                            synthesizeAndPlay(cleanText)
                         } else {
                             setState(State.IDLE)
                             updateStatus("Ready")
@@ -2726,9 +2709,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
     override fun onTestLog(message: String) {
         Log.i(TAG, "[SELF-TEST] $message")
-        runOnUiThread {
-            showErrorBanner("[Test] $message", 4000)
-        }
+        // 不再向用户显示测试 banner，避免干扰正常交互
     }
 
     override fun onTestComplete(results: List<PipelineSelfTest.RoundResult>, summary: String) {
@@ -2736,9 +2717,11 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         Log.i(TAG, "[SELF-TEST] $summary")
         // 持久化自测结果
         saveSelfTestResult(results, summary)
+        // 自测完成后自动恢复 auto-listen，让用户可以继续正常对话
         runOnUiThread {
-            // 显示测试结果对话框
-            showSelfTestResultDialog(results, summary)
+            if (currentState == State.IDLE) {
+                scheduleAutoListen()
+            }
         }
     }
 
