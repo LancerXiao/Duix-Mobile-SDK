@@ -28,6 +28,8 @@ jobs:
           yes | sdkmanager --install "platforms;android-35"
           yes | sdkmanager --install "cmake;3.18.1"
           yes | sdkmanager --install "ndk;25.2.9519653"
+          yes | sdkmanager --install "ndk;25.1.8937393"
+          yes | sdkmanager --install "build-tools;33.0.2"
           yes | sdkmanager --licenses
 
       - name: Decode keystore
