@@ -30,12 +30,15 @@ class PipelineHealthMonitor(private val host: HealthHost) {
 
     companion object {
         private const val TAG = "PipelineHealthMonitor"
-        // 健康检查间隔
-        private const val CHECK_INTERVAL_MS = 5_000L
+        // 健康检查间隔（不要太频繁，避免干扰正常交互）
+        private const val CHECK_INTERVAL_MS = 10_000L
         // 各状态最大持续时间（超过视为卡死）
-        private const val MAX_THINKING_DURATION_MS = 35_000L
-        private const val MAX_SPEAKING_DURATION_MS = 20_000L
-        private const val MAX_LISTENING_DURATION_MS = 30_000L
+        // THINKING: LLM 请求可能需要较长时间，设为 60s（CallActivity 已有 15s 超时保护）
+        private const val MAX_THINKING_DURATION_MS = 60_000L
+        // SPEAKING: 长文本 TTS 合成可能需要 30s+，设为 60s
+        private const val MAX_SPEAKING_DURATION_MS = 60_000L
+        // LISTENING: 用户可能思考很久才说话，设为 120s（2分钟）
+        private const val MAX_LISTENING_DURATION_MS = 120_000L
         // TTS 降级冷却时间：避免频繁切换
         private const val TTS_FALLBACK_COOLDOWN_MS = 60_000L
     }

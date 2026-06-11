@@ -26,9 +26,9 @@ class LlmService {
     }
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)  // 流式 SSE 每个 chunk 的读取超时
+        .writeTimeout(15, TimeUnit.SECONDS)
         .build()
 
     private val messages = JSONArray()

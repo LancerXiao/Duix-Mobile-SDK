@@ -24,7 +24,9 @@ class MimoTtsService {
         private const val MAX_RETRIES = 2
         private const val RETRY_DELAY_MS = 800L
         private const val CONNECT_TIMEOUT_S = 10L
-        private const val READ_TIMEOUT_S = 60L
+        // MiMo TTS 是非流式 REST API，需要等整个音频合成完才返回
+        // 长文本可能需要 30s+，设为 45s
+        private const val READ_TIMEOUT_S = 45L
     }
 
     private val client: OkHttpClient = OkHttpClient.Builder()

@@ -656,10 +656,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             // [管线健康监控] 启动运行时状态卡死检测
             healthMonitor = PipelineHealthMonitor(this@CallActivity)
             healthMonitor?.start()
-            // [Phase 4.2 P1-2] 数字人主动开场白（800ms 延迟让 UI 先稳定）
+            // [Phase 4.2 P1-2] 数字人主动开场白
+            // 注意：不再同时 scheduleAutoListen()，等开场白播放完后再启动 auto-listen
+            // 否则开场白还没说完就开始录音，录到回声导致 ASR 误识别
             mainHandler.postDelayed({ playGreeting() }, 800L)
-            // 初始化完成后自动开始监听，参考 Call Annie 即时响应设计
-            scheduleAutoListen()
         }
     }
 
@@ -674,10 +674,16 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         val greeting = "Hi there! I'm XiaoDu, your digital human assistant. Feel free to ask me anything, or just press and hold the microphone below to start talking."
         messageAdapter.append(MessageData(MessageData.Role.AI, greeting))
         scrollMessagesToBottom()
-        // setState 会自动修正 IDLE→SPEAKING 为 IDLE→THINKING→SPEAKING
-        setState(State.SPEAKING)
+        // 开场白直接设 SPEAKING（不经过 THINKING），因为不需要 LLM
+        // 直接赋值 currentState 而非 setState()，避免触发非法转换自动修正
+        currentState = State.SPEAKING
+        stateEnterTimeMs = System.currentTimeMillis()
+        // 进入 SPEAKING 时取消所有待执行的 auto-listen
+        cancelAutoListen()
         updateStatus("Greeting")
         updateUI()
+        // synthesizeAndPlay 会统一处理 setState(SPEAKING) 和 scheduleSpeakingTimeout
+        // 由于 currentState 已经是 SPEAKING，setState 会跳过（same state）
         synthesizeAndPlay(greeting)
     }
 
@@ -933,12 +939,15 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                             return@runOnUiThread
                         }
                         setState(State.IDLE)
-                        updateStatus("ASR error: $error")
                         updateUI()
-                        // [Phase 2.4] 用 banner 替代 Toast
-                        showErrorBanner("ASR error: $error", 4000)
+                        // "No speech" / "No match" 是常见情况，不弹 banner，直接重试
                         if (error.contains("No speech") || error.contains("No match")) {
+                            updateStatus("No speech detected")
                             scheduleAutoListen()
+                        } else {
+                            // 其他 ASR 错误弹短 banner
+                            updateStatus("ASR error")
+                            showErrorBanner("ASR error: $error", 2000)
                         }
                     }
                 }
@@ -1059,9 +1068,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     runOnUiThread {
                         cancelThinkingTimeout()
                         // 过滤 "null" 字符串（LLM API 有时返回 JSON null 被转为字符串 "null"）
-                        val cleanText = fullText.trim().let {
-                            if (it.equals("null", ignoreCase = true) || it == "Null") "" else fullText
-                        }
+                        val trimmedText = fullText.trim()
+                        val cleanText = if (trimmedText.equals("null", ignoreCase = true)) "" else trimmedText
                         showAiBubble(thinking = false, text = cleanText)
                         scrollMessagesToBottomFinal()  // LLM 完成后确保滚动到底部
                         if (cleanText.isNotEmpty()) {
@@ -1080,13 +1088,22 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     runOnUiThread {
                         cancelThinkingTimeout()
                         setState(State.IDLE)
-                        updateStatus("Error: $error")
-                        showAiBubble(thinking = false, text = "Error: $error")
-                        scrollMessagesToBottomFinal()
                         updateUI()
-                        // 重要：网络错误时不再自动重新监听，否则会陷入无限循环
-                        // 让用户决定是否继续（可手动点击麦克风或文本输入）
-                        // 但音频问题（如 No speech）允许自动重新监听
+                        // 对用户友好的错误提示
+                        val userFriendlyError = when {
+                            error.contains("timeout", ignoreCase = true) ||
+                            error.contains("超时", ignoreCase = true) -> "Request timed out, please try again"
+                            error.contains("network", ignoreCase = true) ||
+                            error.contains("网络", ignoreCase = true) ||
+                            error.contains("connect", ignoreCase = true) ||
+                            error.contains("连接", ignoreCase = true) -> "Network error, please check your connection"
+                            error.contains("认证", ignoreCase = true) ||
+                            error.contains("401", ignoreCase = true) -> "Service temporarily unavailable"
+                            else -> "Something went wrong, please try again"
+                        }
+                        showAiBubble(thinking = false, text = userFriendlyError)
+                        scrollMessagesToBottomFinal()
+                        // 网络错误不自动重试，避免无限循环
                         val isNetworkError = error.contains("网络", ignoreCase = true) ||
                                             error.contains("HTTP", ignoreCase = true) ||
                                             error.contains("认证", ignoreCase = true) ||
@@ -1207,7 +1224,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         cancelSpeakingTimeout()
                         // 单向 fallback: Qwen → MiMo → Edge → Android，绝不反向
                         currentTtsEngine = TtsEngine.MIMO_TTS
-                        showErrorBanner("Qwen TTS failed, switching to MiMo TTS", 3000)
+                        // 不再弹 banner，减少对用户的干扰
                         updateUI()
                         scheduleSpeakingTimeout()
                         // 先停止 Qwen TTS，确保 isSynthesizing 被重置
@@ -1288,7 +1305,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         cancelSpeakingTimeout()
                         // 单向 fallback: MiMo → Edge → Android，绝不反向到 Qwen
                         currentTtsEngine = TtsEngine.EDGE_TTS
-                        showErrorBanner("MiMo TTS failed, switching to Edge TTS", 3000)
+                        // 不再弹 banner，减少对用户的干扰
                         updateUI()
                         scheduleSpeakingTimeout()
                         // 先停止 MiMo TTS，确保 isSynthesizing 被重置
@@ -1536,7 +1553,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         setState(State.IDLE)
         updateStatus("Ready")
         updateUI()
-        cancelAutoListen()
+        // 用户打断数字人说话后，自动开始监听（用户打断的目的就是要说话）
+        scheduleAutoListen()
     }
 
     /**
@@ -2913,31 +2931,22 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
     override fun onHealthAlert(alert: PipelineHealthMonitor.HealthAlert) {
         Log.w(TAG, "[HEALTH-ALERT] ${alert.type}: ${alert.message}")
+        // 只对真正卡死的情况弹 banner，其他告警仅记录日志
+        // 避免频繁弹 banner 干扰正常交互
         runOnUiThread {
             when (alert.type) {
                 PipelineHealthMonitor.AlertType.STATE_STUCK -> {
-                    showErrorBanner("State stuck, auto-recovered: ${alert.state}", 5000)
+                    showErrorBanner("Auto-recovered: ${alert.state}", 3000)
                 }
-                PipelineHealthMonitor.AlertType.STATE_ILLEGAL_TRANSITION -> {
-                    showErrorBanner("State error: ${alert.message}", 4000)
-                }
-                PipelineHealthMonitor.AlertType.TTS_PIPELINE_BROKEN -> {
-                    showErrorBanner("TTS pipeline error: ${alert.message}", 5000)
-                }
-                PipelineHealthMonitor.AlertType.NETWORK_UNAVAILABLE -> {
-                    showErrorBanner("No network, conversation may fail", 4000)
-                }
-                PipelineHealthMonitor.AlertType.DUIX_SDK_NOT_READY -> {
-                    showErrorBanner("Digital human not ready, please wait", 4000)
-                }
-                PipelineHealthMonitor.AlertType.TTS_ENGINE_NOT_READY -> {
-                    showErrorBanner("Voice engine unavailable, try switching", 4000)
-                }
-                PipelineHealthMonitor.AlertType.TTS_ENGINE_FALLBACK -> {
-                    showErrorBanner("TTS auto-downgrade: ${alert.message}", 4000)
-                }
+                // 以下类型仅记录日志，不弹 banner
+                PipelineHealthMonitor.AlertType.STATE_ILLEGAL_TRANSITION,
+                PipelineHealthMonitor.AlertType.TTS_PIPELINE_BROKEN,
+                PipelineHealthMonitor.AlertType.NETWORK_UNAVAILABLE,
+                PipelineHealthMonitor.AlertType.DUIX_SDK_NOT_READY,
+                PipelineHealthMonitor.AlertType.TTS_ENGINE_NOT_READY,
+                PipelineHealthMonitor.AlertType.TTS_ENGINE_FALLBACK,
                 PipelineHealthMonitor.AlertType.LLM_TIMEOUT_SUGGESTION -> {
-                    showErrorBanner("LLM timeout: ${alert.fixSuggestion}", 6000)
+                    Log.i(TAG, "[HEALTH] ${alert.type}: ${alert.message} (suppressed banner)")
                 }
             }
         }
