@@ -118,6 +118,31 @@ jobs:
           scp -i ~/.ssh/deploy_key -P ${{ secrets.ECS_PORT }} ${{ steps.version.outputs.apk }} ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:$DEPLOY_DIR/duix_digital_human.apk
           scp -i ~/.ssh/deploy_key -P ${{ secrets.ECS_PORT }} version.json ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:$DEPLOY_DIR/version.json
           scp -i ~/.ssh/deploy_key -P ${{ secrets.ECS_PORT }} deploy/download-page.html ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:$DEPLOY_DIR/index.html
+          # Ensure nginx serves /downloads/ as static files
+          ssh -i ~/.ssh/deploy_key -p ${{ secrets.ECS_PORT }} ${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }} "bash -s" << 'NGINX_SETUP'
+          # Check if nginx downloads config exists, if not create it
+          if [ ! -f /etc/nginx/conf.d/downloads.conf ]; then
+            cat > /etc/nginx/conf.d/downloads.conf << 'CONF'
+          location /downloads/ {
+              alias /var/www/enlyai.com/downloads/;
+              autoindex off;
+              default_type application/octet-stream;
+
+              location ~* \.apk$ {
+                  add_header Content-Disposition 'attachment';
+                  add_header Content-Type application/vnd.android.package-archive;
+              }
+              location ~* \.json$ {
+                  add_header Content-Type application/json;
+              }
+              location ~* \.html$ {
+                  add_header Content-Type text/html;
+              }
+          }
+          CONF
+            nginx -t && nginx -s reload || echo "nginx reload failed, config may need manual fix"
+          fi
+          NGINX_SETUP
           echo "Deployed to: https://www.enlyai.com/downloads/duix/"
 
       - name: Commit version bump
