@@ -185,7 +185,7 @@ class AndroidTtsService(private val context: Context) {
         // 生成 1.5 秒静音 PCM 数据（16kHz 单声道 16bit）来驱动口型动画
         // 这样数字人会有口型动画，同时 Android TTS 通过扬声器播放语音
         val durationMs = estimateSpeechDuration(text)
-        val numSamples = (16000 * durationMs / 1000)
+        val numSamples = (16000.0 * durationMs / 1000).toInt()
         val silencePcm = ByteArray(numSamples * 2)  // 16bit = 2 bytes per sample
         // 静音数据全是 0，不需要填充
 
