@@ -1058,7 +1058,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     if (token.equals("null", ignoreCase = true)) return
                     fullResponse.append(token)
                     runOnUiThread {
-                        showAiBubble(thinking = false, text = fullResponse.toString())
+                        showAiBubbleStreaming(fullResponse.toString())
                         updateStatus("Responding")
                     }
                 }
@@ -1066,6 +1066,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 override fun onComplete(fullText: String) {
                     Log.i(TAG, "[DIAG] LLM.onComplete: fullText长度=${fullText.length}, fullText='${fullText.take(50)}...'")
                     runOnUiThread {
+                        // 取消 pending 的流式更新，避免覆盖最终文本
+                        streamUpdateJob?.let { binding.messagesList.removeCallbacks(it) }
+                        streamUpdateJob = null
+                        pendingStreamText = null
                         cancelThinkingTimeout()
                         // 过滤 "null" 字符串（LLM API 有时返回 JSON null 被转为字符串 "null"）
                         val trimmedText = fullText.trim()
@@ -1868,12 +1872,34 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             val msgs = messageAdapter.snapshot()
             if (msgs.isNotEmpty() && msgs.last().role == MessageData.Role.AI) {
                 messageAdapter.updateLast(MessageData(MessageData.Role.AI, text, isThinking = false))
-                // 流式更新时不滚动，避免列表跳动；只在内容高度变化时才滚动
             } else {
                 messageAdapter.append(MessageData(MessageData.Role.AI, text))
                 scrollMessagesToBottom()
             }
         }
+    }
+
+    /**
+     * 流式更新 AI 气泡文本（带防抖）
+     * LLM onToken 回调频率很高（~50ms/token），直接每个 token 都 updateLast 会导致：
+     * 1. RecyclerView 频繁 notifyItemChanged，UI 抖动
+     * 2. MarkdownRenderer 频繁重新渲染，CPU 开销大
+     * 解决：攒 80ms 再统一更新一次
+     */
+    private var streamUpdateJob: Runnable? = null
+    private var pendingStreamText: String? = null
+
+    private fun showAiBubbleStreaming(text: String) {
+        pendingStreamText = text
+        // 取消之前的更新任务（防抖）
+        streamUpdateJob?.let { binding.messagesList.removeCallbacks(it) }
+        streamUpdateJob = Runnable {
+            pendingStreamText?.let { t ->
+                showAiBubble(thinking = false, text = t)
+                pendingStreamText = null
+            }
+        }
+        binding.messagesList.postDelayed(streamUpdateJob!!, 80L)
     }
 
     /** LLM onComplete 时调用，确保最终滚动到底部 */

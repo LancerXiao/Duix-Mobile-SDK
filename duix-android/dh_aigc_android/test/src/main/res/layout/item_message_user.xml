@@ -7,8 +7,8 @@
     android:gravity="end|bottom"
     android:paddingStart="48dp"
     android:paddingEnd="12dp"
-    android:paddingTop="4dp"
-    android:paddingBottom="4dp">
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp">
 
     <LinearLayout
         android:layout_width="wrap_content"
