@@ -117,7 +117,9 @@ class EdgeTtsService {
                 webSocket.send(configMessage)
 
                 // 2. 发送SSML消息
-                val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'>" +
+                // 根据语音名称推断语言代码
+                val langCode = if (voice.startsWith("zh-")) "zh-CN" else "en-US"
+                val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='$langCode'>" +
                         "<voice name='$voice'>" +
                         "<prosody pitch='+0Hz' rate='+0%' volume='+0%'>" +
                         escapeXml(text) +
@@ -139,13 +141,17 @@ class EdgeTtsService {
                         chunkCount = audioChunks.size
                         fullAudio = combineAudioChunks()
                     }
-                    Log.i(TAG, "Synthesis completed, total chunks: $chunkCount")
+                    Log.i(TAG, "Synthesis completed, total chunks: $chunkCount, audioSize: ${fullAudio.size}")
                     isSynthesizing.set(false)
                     cancelTimeout()
                     if (fullAudio.isNotEmpty()) {
                         callback.onAudioData(fullAudio)
+                        callback.onComplete()
+                    } else {
+                        // 合成完成但无音频数据，视为失败
+                        Log.w(TAG, "Edge TTS returned no audio data")
+                        callback.onError("No audio data received")
                     }
-                    callback.onComplete()
                     webSocket.close(1000, "Done")
                 } else if (text.contains("Path:audio.metadata")) {
                     // 音频元数据，忽略

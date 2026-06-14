@@ -38,13 +38,14 @@ class AndroidTtsService(private val context: Context) {
     fun init() {
         tts = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                val result = tts?.setLanguage(Locale.CHINA)
+                // 优先使用英文语音（LLM 默认输出英文）
+                var result = tts?.setLanguage(Locale.US)
                 if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    Log.w(TAG, "中文语言不支持，尝试使用默认语言")
-                    tts?.setLanguage(Locale.getDefault())
+                    Log.w(TAG, "英文语言不支持，尝试使用默认语言")
+                    result = tts?.setLanguage(Locale.getDefault())
                 }
                 isInitialized = true
-                Log.i(TAG, "Android TTS 初始化成功")
+                Log.i(TAG, "Android TTS 初始化成功, language result=$result")
             } else {
                 Log.e(TAG, "Android TTS 初始化失败: status=$status")
                 isInitialized = false
@@ -95,11 +96,11 @@ class AndroidTtsService(private val context: Context) {
                             if (pcmData != null && pcmData.isNotEmpty()) {
                                 Log.i(TAG, "提取PCM数据: ${pcmData.size} bytes")
                                 callback.onPcmData(pcmData)
+                                callback.onComplete()
                             } else {
                                 Log.e(TAG, "PCM数据为空或读取失败")
                                 callback.onError("PCM数据为空")
                             }
-                            callback.onComplete()
                         } catch (e: Exception) {
                             Log.e(TAG, "读取WAV文件失败", e)
                             callback.onError("读取WAV文件失败: ${e.message}")
