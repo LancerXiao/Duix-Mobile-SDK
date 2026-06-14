@@ -1125,7 +1125,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
     /**
      * 合成语音并推送给 DUIX 数字人
-     * 优先使用 Edge TTS，失败时自动切换到 Android 原生 TTS
+     * 优先使用当前选择的 TTS 引擎，失败时自动 fallback
      */
     private fun synthesizeAndPlay(text: String) {
         // setState 会自动修正非法转换（如 IDLE→SPEAKING 自动插入 THINKING）
@@ -1139,6 +1139,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             updateUI()
             return
         }
+
+        // [Bug fix] 在开始新的合成前，停止所有 TTS 引擎并重置状态
+        // 防止之前引擎的 isSynthesizing 残留导致新引擎被拒绝
+        stopAllTtsEngines()
 
         when (currentTtsEngine) {
             TtsEngine.QWEN_TTS -> {
@@ -1158,6 +1162,17 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 synthesizeWithAndroidTts(text, currentDuix)
             }
         }
+    }
+
+    /**
+     * 停止所有 TTS 引擎并重置 isSynthesizing 状态
+     * 在每次新的合成前调用，防止引擎切换后残留状态导致新引擎被拒绝
+     */
+    private fun stopAllTtsEngines() {
+        try { qwenTtsService.stop() } catch (e: Exception) { Log.d(TAG, "停止Qwen TTS: ${e.message}") }
+        try { mimoTtsService.stop() } catch (e: Exception) { Log.d(TAG, "停止MiMo TTS: ${e.message}") }
+        try { edgeTtsService.stop() } catch (e: Exception) { Log.d(TAG, "停止Edge TTS: ${e.message}") }
+        try { if (::androidTtsService.isInitialized) androidTtsService.stop() } catch (e: Exception) { Log.d(TAG, "停止Android TTS: ${e.message}") }
     }
 
     /**
@@ -1331,7 +1346,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         Log.i(TAG, "尝试 Edge TTS 合成: ${text.take(30)}...")
         val pushedOnce = java.util.concurrent.atomic.AtomicBoolean(false)
         try {
-            edgeTtsService.synthesize(text, EdgeTtsService.VOICE_XIAOXIAO, object : EdgeTtsService.Callback {
+            edgeTtsService.synthesize(text, EdgeTtsService.VOICE_JENNY, object : EdgeTtsService.Callback {
                 override fun onAudioData(mp3Data: ByteArray) {
                     Log.i(TAG, "Edge TTS 返回音频数据: ${mp3Data.size} bytes")
                     Thread {
@@ -1340,28 +1355,23 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                                 Log.i(TAG, "调用 startPush()")
                                 currentDuix.startPush()
                             }
-                            var totalPcmBytes = 0L
-                            var pcmChunkCount = 0
                             if (!::mp3ToPcmConverter.isInitialized) {
                                 throw RuntimeException("MP3转换器未初始化")
                             }
                             mp3ToPcmConverter.convert(mp3Data, object : Mp3ToPcmConverter.Callback {
                                 override fun onPcmData(pcmData: ByteArray) {
-                                    pcmChunkCount++
-                                    totalPcmBytes += pcmData.size
-                                    Log.i(TAG, "pushPcm #$pcmChunkCount: ${pcmData.size} bytes (total: $totalPcmBytes)")
                                     try {
                                         currentDuix.pushPcm(pcmData)
-                                    } catch (e: Exception) {
+                                    } catch (e: Throwable) {
                                         Log.e(TAG, "pushPcm异常", e)
                                     }
                                 }
 
                                 override fun onComplete() {
-                                    Log.i(TAG, "PCM转换完成: $pcmChunkCount chunks, $totalPcmBytes bytes, 调用 stopPush()")
+                                    Log.i(TAG, "Edge TTS PCM转换完成，调用 stopPush()")
                                     try {
                                         currentDuix.stopPush()
-                                    } catch (e: Exception) {
+                                    } catch (e: Throwable) {
                                         Log.e(TAG, "stopPush异常", e)
                                     }
                                     edgeTtsFailCount = 0
@@ -1375,15 +1385,15 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                                     Log.e(TAG, "MP3 to PCM conversion error: $error")
                                     try {
                                         currentDuix.stopPush()
-                                    } catch (e: Exception) {
+                                    } catch (e: Throwable) {
                                         Log.e(TAG, "stopPush异常", e)
                                     }
                                     runOnUiThread {
-                                        Log.i(TAG, "MP3转换失败，切换到Android TTS")
-                                        updateStatus("Switching TTS")
+                                        cancelSpeakingTimeout()
+                                        // MP3 转换失败，fallback 到 Android TTS
                                         currentTtsEngine = TtsEngine.ANDROID_TTS
-                                        // 不保存偏好，仅临时降级
                                         updateUI()
+                                        scheduleSpeakingTimeout()
                                         synthesizeWithAndroidTts(text, currentDuix)
                                     }
                                 }
@@ -1391,8 +1401,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         } catch (e: Exception) {
                             Log.e(TAG, "Edge TTS PCM处理异常", e)
                             runOnUiThread {
+                                cancelSpeakingTimeout()
                                 currentTtsEngine = TtsEngine.ANDROID_TTS
                                 updateUI()
+                                scheduleSpeakingTimeout()
                                 synthesizeWithAndroidTts(text, currentDuix)
                             }
                         }
@@ -1401,7 +1413,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
                 override fun onComplete() {
                     Log.i(TAG, "Edge TTS 合成完成")
-                    // PCM 推送和 IDLE 恢复在内部 onComplete 中处理
+                    // PCM 推送和 IDLE 恢复在 onAudioData 内部的 Mp3ToPcmConverter 回调中处理
                 }
 
                 override fun onError(error: String) {
@@ -1409,10 +1421,11 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     edgeTtsFailCount++
                     runOnUiThread {
                         cancelSpeakingTimeout()
+                        // Edge TTS 失败，先停止确保 isSynthesizing 重置
+                        edgeTtsService.stop()
                         if (edgeTtsFailCount >= 2) {
                             Log.i(TAG, "Edge TTS 连续失败 $edgeTtsFailCount 次，切换到Android TTS")
                             currentTtsEngine = TtsEngine.ANDROID_TTS
-                            // 不保存偏好，仅临时降级
                             updateUI()
                         }
                         scheduleSpeakingTimeout()
@@ -1422,9 +1435,14 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             })
         } catch (e: Exception) {
             Log.e(TAG, "Edge TTS调用异常", e)
-            currentTtsEngine = TtsEngine.ANDROID_TTS
-            updateUI()
-            synthesizeWithAndroidTts(text, currentDuix)
+            edgeTtsService.stop()
+            runOnUiThread {
+                cancelSpeakingTimeout()
+                currentTtsEngine = TtsEngine.ANDROID_TTS
+                updateUI()
+                scheduleSpeakingTimeout()
+                synthesizeWithAndroidTts(text, currentDuix)
+            }
         }
     }
 
@@ -1435,6 +1453,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         if (!::androidTtsService.isInitialized || !androidTtsService.isReady()) {
             Log.e(TAG, "Android TTS 未初始化，无法合成语音")
             runOnUiThread {
+                cancelSpeakingTimeout()
                 updateStatus("Voice unavailable")
                 setState(State.IDLE)
                 updateUI()
@@ -1444,14 +1463,17 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         }
 
         Log.i(TAG, "使用 Android TTS 合成: ${text.take(30)}...")
+        val pushedOnce = java.util.concurrent.atomic.AtomicBoolean(false)
         try {
             androidTtsService.synthesize(text, object : AndroidTtsService.Callback {
                 override fun onPcmData(pcmData: ByteArray) {
                     Log.i(TAG, "Android TTS 返回PCM数据: ${pcmData.size} bytes")
                     Thread {
                         try {
-                            Log.i(TAG, "调用 startPush()")
-                            currentDuix.startPush()
+                            if (pushedOnce.compareAndSet(false, true)) {
+                                Log.i(TAG, "调用 startPush()")
+                                currentDuix.startPush()
+                            }
 
                             var offset = 0
                             var chunkCount = 0
@@ -1460,7 +1482,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                                 val chunk = pcmData.copyOfRange(offset, offset + chunkSize)
                                 try {
                                     currentDuix.pushPcm(chunk)
-                                } catch (e: Exception) {
+                                } catch (e: Throwable) {
                                     Log.e(TAG, "pushPcm异常", e)
                                     break
                                 }
@@ -1471,7 +1493,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                             Log.i(TAG, "PCM推送完成: $chunkCount chunks, ${pcmData.size} bytes, 调用 stopPush()")
                             try {
                                 currentDuix.stopPush()
-                            } catch (e: Exception) {
+                            } catch (e: Throwable) {
                                 Log.e(TAG, "stopPush异常", e)
                             }
                             runOnUiThread {
@@ -1481,6 +1503,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         } catch (e: Exception) {
                             Log.e(TAG, "Android TTS PCM推送异常", e)
                             runOnUiThread {
+                                cancelSpeakingTimeout()
                                 updateStatus("Playback failed")
                                 setState(State.IDLE)
                                 updateUI()
@@ -1492,6 +1515,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
                 override fun onComplete() {
                     Log.i(TAG, "Android TTS 合成完成")
+                    // PCM 推送和 IDLE 恢复在 onPcmData 回调中处理
                 }
 
                 override fun onError(error: String) {
@@ -1501,13 +1525,14 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         updateStatus("Synthesis failed")
                         setState(State.IDLE)
                         updateUI()
-                        scheduleAutoListenAfterSpeaking()
+                        scheduleAutoListen()
                     }
                 }
             })
         } catch (e: Exception) {
             Log.e(TAG, "Android TTS调用异常", e)
             runOnUiThread {
+                cancelSpeakingTimeout()
                 updateStatus("Synthesis failed")
                 setState(State.IDLE)
                 updateUI()
@@ -1520,26 +1545,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         cancelSpeakingTimeout()
         cancelThinkingTimeout()
         cancelTtsCompletionRecovery()
-        try {
-            edgeTtsService.stop()
-        } catch (e: Exception) {
-            Log.e(TAG, "停止Edge TTS异常", e)
-        }
-        try {
-            qwenTtsService.stop()
-        } catch (e: Exception) {
-            Log.e(TAG, "停止Qwen TTS异常", e)
-        }
-        try {
-            mimoTtsService.stop()
-        } catch (e: Exception) {
-            Log.e(TAG, "停止MiMo TTS异常", e)
-        }
-        try {
-            if (::androidTtsService.isInitialized) androidTtsService.stop()
-        } catch (e: Exception) {
-            Log.e(TAG, "停止Android TTS异常", e)
-        }
+        stopAllTtsEngines()
         try {
             duix?.stopPush()
         } catch (e: Exception) {

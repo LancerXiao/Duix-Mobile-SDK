@@ -66,6 +66,17 @@ class AndroidTtsService(private val context: Context) {
 
         val outputFile = File(context.cacheDir, "tts_output_${System.currentTimeMillis()}.wav")
 
+        // 合成超时保护：10秒内未完成则报错
+        val timeoutHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        var synthesisCompleted = false
+        val timeoutRunnable = Runnable {
+            if (!synthesisCompleted) {
+                Log.e(TAG, "TTS 合成超时（10秒）")
+                callback.onError("TTS 合成超时")
+            }
+        }
+        timeoutHandler.postDelayed(timeoutRunnable, 10000L)
+
         // 设置进度监听
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
@@ -73,6 +84,8 @@ class AndroidTtsService(private val context: Context) {
             }
 
             override fun onDone(utteranceId: String?) {
+                synthesisCompleted = true
+                timeoutHandler.removeCallbacks(timeoutRunnable)
                 Log.i(TAG, "TTS 合成完成: ${outputFile.absolutePath}, exists=${outputFile.exists()}, size=${outputFile.length()}")
                 if (outputFile.exists() && outputFile.length() > 44) {
                     // 读取WAV文件并提取PCM数据
@@ -101,6 +114,8 @@ class AndroidTtsService(private val context: Context) {
             }
 
             override fun onError(utteranceId: String?) {
+                synthesisCompleted = true
+                timeoutHandler.removeCallbacks(timeoutRunnable)
                 Log.e(TAG, "TTS 合成出错")
                 callback.onError("TTS 合成出错")
             }
