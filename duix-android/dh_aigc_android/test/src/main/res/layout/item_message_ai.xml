@@ -1,109 +1,103 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- AI message item: avatar + white bubble, left-aligned -->
+<!-- AI message item: transparent text with shadow, left-aligned -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:gravity="start|bottom"
-    android:paddingStart="12dp"
-    android:paddingEnd="48dp"
-    android:paddingTop="6dp"
-    android:paddingBottom="6dp">
+    android:orientation="vertical"
+    android:gravity="start"
+    android:paddingStart="16dp"
+    android:paddingEnd="52dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
 
-    <!-- AI avatar -->
+    <!-- AI label -->
     <TextView
-        android:id="@+id/tvAvatar"
-        android:layout_width="28dp"
-        android:layout_height="28dp"
-        android:layout_marginEnd="8dp"
-        android:layout_marginBottom="2dp"
-        android:gravity="center"
-        android:background="@drawable/bg_avatar_ai"
-        android:text="AI"
-        android:textColor="@color/white"
-        android:textSize="10sp"
-        android:textStyle="bold"
-        android:elevation="2dp" />
-
-    <LinearLayout
+        android:id="@+id/tvSenderLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:text="AI"
+        android:textColor="#BBFFFFFF"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="2dp"
+        android:shadowColor="#80000000"
+        android:shadowRadius="2"
+        android:shadowDx="0"
+        android:shadowDy="1" />
 
-        <!-- AI text bubble -->
-        <TextView
-            android:id="@+id/tvMessageText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/bg_chat_bubble"
-            android:elevation="2dp"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp"
-            android:paddingTop="10dp"
-            android:paddingBottom="10dp"
-            android:textColor="#1F2937"
-            android:textSize="15sp"
-            android:lineSpacingExtra="3dp"
-            android:maxWidth="300dp" />
+    <!-- AI text -->
+    <TextView
+        android:id="@+id/tvMessageText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_chat_bubble"
+        android:paddingStart="0dp"
+        android:paddingEnd="0dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:lineSpacingExtra="4dp"
+        android:maxWidth="300dp"
+        android:shadowColor="#99000000"
+        android:shadowRadius="3"
+        android:shadowDx="0"
+        android:shadowDy="1" />
 
-        <!-- Thinking dots (Coze style) -->
-        <LinearLayout
-            android:id="@+id/tvThinking"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="@drawable/bg_chat_bubble"
-            android:elevation="2dp"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:paddingTop="14dp"
-            android:paddingBottom="14dp"
-            android:visibility="gone">
+    <!-- Thinking dots -->
+    <LinearLayout
+        android:id="@+id/tvThinking"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="0dp"
+        android:paddingEnd="0dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone">
 
-            <View
-                android:id="@+id/dot1"
-                android:layout_width="7dp"
-                android:layout_height="7dp"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/dot_thinking" />
+        <View
+            android:id="@+id/dot1"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_marginEnd="5dp"
+            android:background="@drawable/dot_thinking" />
 
-            <View
-                android:id="@+id/dot2"
-                android:layout_width="7dp"
-                android:layout_height="7dp"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/dot_thinking" />
+        <View
+            android:id="@+id/dot2"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_marginEnd="5dp"
+            android:background="@drawable/dot_thinking" />
 
-            <View
-                android:id="@+id/dot3"
-                android:layout_width="7dp"
-                android:layout_height="7dp"
-                android:background="@drawable/dot_thinking" />
+        <View
+            android:id="@+id/dot3"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:background="@drawable/dot_thinking" />
 
-        </LinearLayout>
+    </LinearLayout>
 
-        <!-- Action buttons row -->
-        <LinearLayout
-            android:id="@+id/llAiActions"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="2dp"
-            android:visibility="gone">
+    <!-- Action buttons row -->
+    <LinearLayout
+        android:id="@+id/llAiActions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="2dp"
+        android:visibility="gone">
 
-            <ImageView
-                android:id="@+id/btnRegenerate"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
-                android:padding="4dp"
-                android:background="@drawable/selector_regenerate_ripple"
-                android:src="@drawable/ic_regenerate"
-                android:contentDescription="Regenerate"
-                xmlns:app="http://schemas.android.com/apk/res-auto"
-                app:tint="#666666" />
-
-        </LinearLayout>
+        <ImageView
+            android:id="@+id/btnRegenerate"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:padding="4dp"
+            android:background="@drawable/selector_regenerate_ripple"
+            android:src="@drawable/ic_regenerate"
+            android:contentDescription="Regenerate"
+            xmlns:app="http://schemas.android.com/apk/res-auto"
+            app:tint="#BBFFFFFF" />
 
     </LinearLayout>
 

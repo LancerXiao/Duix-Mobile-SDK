@@ -30,10 +30,10 @@ import android.widget.TextView
  */
 object MarkdownRenderer {
 
-    private const val CODE_BG_COLOR = 0x22000000.toInt()      // 浅灰半透明
-    private const val CODE_BLOCK_BG_COLOR = 0x33000000.toInt() // 代码块浅灰
-    private const val LINK_COLOR = 0xFF7C3AED.toInt()          // 品牌紫色
-    private const val HEADING_COLOR = 0xFF1F2937.toInt()       // 深色标题
+    private const val CODE_BG_COLOR = 0x44FFFFFF.toInt()      // 白色半透明（深色背景上）
+    private const val CODE_BLOCK_BG_COLOR = 0x55FFFFFF.toInt() // 代码块白色半透明
+    private const val LINK_COLOR = 0xFFA78BFA.toInt()          // 浅紫色链接（白色文字上可区分）
+    private const val HEADING_COLOR = 0xFFFFFFFF.toInt()       // 白色标题
 
     fun render(text: CharSequence): CharSequence {
         var src = text.toString()
