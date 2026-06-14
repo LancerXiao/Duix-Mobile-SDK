@@ -1,10 +1,15 @@
 package ai.guiji.duix.test.service
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
 import android.os.Build
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -13,21 +18,24 @@ import java.util.Locale
 
 /**
  * Android 原生 TTS 服务
- * 使用系统 TextToSpeech 引擎合成语音
- * 作为 Edge TTS 的备选方案，无需网络连接
  *
  * 两种工作模式：
- * 1. synthesize() - 合成WAV文件并提取PCM数据，用于驱动数字人口型
- * 2. speak() - 直接播放语音，不驱动口型
+ * 1. synthesize() - 合成WAV文件并提取PCM数据，推送给DUIX SDK驱动口型
+ * 2. speakDirect() - 直接播放语音，不驱动口型（fallback 方案）
+ *
+ * synthesize() 使用 synthesizeToFile，在某些设备上可能不工作，
+ * 此时自动降级到 speakDirect() 模式
  */
 class AndroidTtsService(private val context: Context) {
 
     companion object {
         private const val TAG = "AndroidTtsService"
+        private const val SYNTHESIS_TIMEOUT_MS = 15000L
     }
 
     private var tts: TextToSpeech? = null
     private var isInitialized = false
+    private var synthesizeToFileWorks = true  // 标记 synthesizeToFile 是否可用
 
     interface Callback {
         fun onPcmData(data: ByteArray)
@@ -56,8 +64,8 @@ class AndroidTtsService(private val context: Context) {
     fun isReady(): Boolean = isInitialized && tts != null
 
     /**
-     * 使用 Android TTS 合成语音为WAV文件，然后提取PCM数据
-     * PCM数据为16kHz单声道16bit，可直接推送给DUIX SDK
+     * 合成语音并返回 PCM 数据
+     * 优先使用 synthesizeToFile，如果失败则降级到 speakDirect
      */
     fun synthesize(text: String, callback: Callback) {
         if (!isReady()) {
@@ -65,31 +73,46 @@ class AndroidTtsService(private val context: Context) {
             return
         }
 
+        if (synthesizeToFileWorks) {
+            synthesizeViaFile(text, callback)
+        } else {
+            // synthesizeToFile 不可用，使用直接播放模式
+            speakDirect(text, callback)
+        }
+    }
+
+    /**
+     * 方案1：使用 synthesizeToFile 生成 WAV 文件，提取 PCM 推送给 DUIX
+     * 优点：可以获取 PCM 数据驱动口型
+     * 缺点：某些设备/ROM 不支持
+     */
+    private fun synthesizeViaFile(text: String, callback: Callback) {
         val outputFile = File(context.cacheDir, "tts_output_${System.currentTimeMillis()}.wav")
 
-        // 合成超时保护：10秒内未完成则报错
+        // 超时保护
         val timeoutHandler = android.os.Handler(android.os.Looper.getMainLooper())
         var synthesisCompleted = false
         val timeoutRunnable = Runnable {
             if (!synthesisCompleted) {
-                Log.e(TAG, "TTS 合成超时（10秒）")
+                Log.e(TAG, "TTS 合成超时")
+                synthesisCompleted = true
+                // 标记 synthesizeToFile 不可用，下次用 speakDirect
+                synthesizeToFileWorks = false
                 callback.onError("TTS 合成超时")
             }
         }
-        timeoutHandler.postDelayed(timeoutRunnable, 10000L)
+        timeoutHandler.postDelayed(timeoutRunnable, SYNTHESIS_TIMEOUT_MS)
 
-        // 设置进度监听
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
-                Log.i(TAG, "TTS 开始合成")
+                Log.i(TAG, "TTS 开始合成 (file mode)")
             }
 
             override fun onDone(utteranceId: String?) {
                 synthesisCompleted = true
                 timeoutHandler.removeCallbacks(timeoutRunnable)
-                Log.i(TAG, "TTS 合成完成: ${outputFile.absolutePath}, exists=${outputFile.exists()}, size=${outputFile.length()}")
+                Log.i(TAG, "TTS 合成完成: exists=${outputFile.exists()}, size=${outputFile.length()}")
                 if (outputFile.exists() && outputFile.length() > 44) {
-                    // 读取WAV文件并提取PCM数据
                     Thread {
                         try {
                             val pcmData = readPcmFromWav(outputFile)
@@ -98,31 +121,39 @@ class AndroidTtsService(private val context: Context) {
                                 callback.onPcmData(pcmData)
                                 callback.onComplete()
                             } else {
-                                Log.e(TAG, "PCM数据为空或读取失败")
-                                callback.onError("PCM数据为空")
+                                Log.e(TAG, "PCM数据为空或读取失败，降级到 speakDirect")
+                                synthesizeToFileWorks = false
+                                // 在主线程回调
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    speakDirect(text, callback)
+                                }
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "读取WAV文件失败", e)
-                            callback.onError("读取WAV文件失败: ${e.message}")
+                            synthesizeToFileWorks = false
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                speakDirect(text, callback)
+                            }
                         } finally {
                             outputFile.delete()
                         }
                     }.start()
                 } else {
-                    Log.e(TAG, "WAV文件不存在或太小")
-                    callback.onError("WAV文件生成失败")
+                    Log.e(TAG, "WAV文件不存在或太小，降级到 speakDirect")
+                    synthesizeToFileWorks = false
+                    speakDirect(text, callback)
                 }
             }
 
             override fun onError(utteranceId: String?) {
                 synthesisCompleted = true
                 timeoutHandler.removeCallbacks(timeoutRunnable)
-                Log.e(TAG, "TTS 合成出错")
-                callback.onError("TTS 合成出错")
+                Log.e(TAG, "TTS 合成出错，降级到 speakDirect")
+                synthesizeToFileWorks = false
+                speakDirect(text, callback)
             }
         })
 
-        // 合成到文件
         val utteranceId = "tts_${System.currentTimeMillis()}"
         val result: Int
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -133,34 +164,83 @@ class AndroidTtsService(private val context: Context) {
         }
 
         if (result == TextToSpeech.ERROR) {
-            Log.e(TAG, "synthesizeToFile 返回错误")
-            callback.onError("synthesizeToFile 失败")
+            Log.e(TAG, "synthesizeToFile 返回错误，降级到 speakDirect")
+            synthesisCompleted = true
+            timeoutHandler.removeCallbacks(timeoutRunnable)
+            synthesizeToFileWorks = false
+            speakDirect(text, callback)
         }
+    }
+
+    /**
+     * 方案2：使用 speak() 直接播放语音
+     * 优点：所有设备都支持
+     * 缺点：无法获取 PCM 数据驱动口型，但至少能发声
+     *
+     * 使用 AudioTrack 播放静音 PCM 来驱动 DUIX 口型动画
+     */
+    private fun speakDirect(text: String, callback: Callback) {
+        Log.i(TAG, "使用 speakDirect 模式播放")
+
+        // 生成 1.5 秒静音 PCM 数据（16kHz 单声道 16bit）来驱动口型动画
+        // 这样数字人会有口型动画，同时 Android TTS 通过扬声器播放语音
+        val durationMs = estimateSpeechDuration(text)
+        val numSamples = (16000 * durationMs / 1000)
+        val silencePcm = ByteArray(numSamples * 2)  // 16bit = 2 bytes per sample
+        // 静音数据全是 0，不需要填充
+
+        // 先回调 PCM 数据（驱动口型）
+        callback.onPcmData(silencePcm)
+
+        // 然后用 TTS 直接播放
+        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {
+                Log.i(TAG, "TTS speakDirect 开始播放")
+            }
+
+            override fun onDone(utteranceId: String?) {
+                Log.i(TAG, "TTS speakDirect 播放完成")
+                callback.onComplete()
+            }
+
+            override fun onError(utteranceId: String?) {
+                Log.e(TAG, "TTS speakDirect 播放出错")
+                callback.onError("TTS 播放出错")
+            }
+        })
+
+        val utteranceId = "tts_speak_${System.currentTimeMillis()}"
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+    }
+
+    /**
+     * 估算语音时长（毫秒）
+     * 英文约 150 words/min，中文约 300 字/min
+     */
+    private fun estimateSpeechDuration(text: String): Long {
+        val wordCount = text.split("\\s+".toRegex()).size
+        // 保守估计：每个词 400ms（包括标点停顿）
+        return maxOf(2000L, wordCount * 400L)
     }
 
     /**
      * 从WAV文件中读取PCM数据
      * WAV头通常是44字节，之后是PCM数据
-     * 注意：Android TTS生成的WAV格式可能是各种采样率和声道数
      * 需要读取WAV头确认格式，并重采样到16kHz单声道
      */
     private fun readPcmFromWav(wavFile: File): ByteArray? {
         try {
             FileInputStream(wavFile).use { fis ->
-                // 读取WAV头
                 val header = ByteArray(44)
                 val bytesRead = fis.read(header)
                 if (bytesRead < 44) return null
 
-                // 解析WAV头
-                // RIFF header
                 val riff = String(header, 0, 4)
                 if (riff != "RIFF") {
                     Log.e(TAG, "不是有效的WAV文件: RIFF=$riff")
                     return null
                 }
 
-                // fmt chunk
                 val audioFormat = ((header[21].toInt() and 0xFF) shl 8) or (header[20].toInt() and 0xFF)
                 val numChannels = ((header[23].toInt() and 0xFF) shl 8) or (header[22].toInt() and 0xFF)
                 val sampleRate = ((header[27].toInt() and 0xFF) shl 24) or
@@ -171,7 +251,6 @@ class AndroidTtsService(private val context: Context) {
 
                 Log.i(TAG, "WAV格式: format=$audioFormat, channels=$numChannels, sampleRate=$sampleRate, bitsPerSample=$bitsPerSample")
 
-                // 读取PCM数据
                 val bos = ByteArrayOutputStream()
                 val buffer = ByteArray(4096)
                 var len: Int
@@ -182,18 +261,15 @@ class AndroidTtsService(private val context: Context) {
 
                 if (pcmData.isEmpty()) return null
 
-                // 如果不是16bit，无法处理
                 if (bitsPerSample != 16) {
                     Log.e(TAG, "不支持的位深度: $bitsPerSample")
                     return null
                 }
 
-                // 如果是多声道，转为单声道
                 if (numChannels > 1) {
                     pcmData = convertToMono(pcmData, numChannels)
                 }
 
-                // 如果采样率不是16kHz，重采样
                 if (sampleRate != 16000) {
                     pcmData = resample(pcmData, sampleRate, 16000)
                 }
@@ -265,25 +341,6 @@ class AndroidTtsService(private val context: Context) {
             outputData[i * 2 + 1] = ((sample.toInt() shr 8) and 0xFF).toByte()
         }
         return outputData
-    }
-
-    /**
-     * 直接使用 TTS 播放（不获取 PCM 数据，不驱动口型）
-     */
-    fun speak(text: String, callback: (() -> Unit)? = null) {
-        if (!isReady()) {
-            callback?.invoke()
-            return
-        }
-
-        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {}
-            override fun onDone(utteranceId: String?) { callback?.invoke() }
-            override fun onError(utteranceId: String?) { callback?.invoke() }
-        })
-
-        val utteranceId = "tts_${System.currentTimeMillis()}"
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
     }
 
     fun stop() {

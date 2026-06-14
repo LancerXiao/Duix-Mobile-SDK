@@ -42,6 +42,7 @@ class EdgeTtsService {
     private var webSocket: WebSocket? = null
     private val isSynthesizing = AtomicBoolean(false)
     private var shouldStop = false  // 主动停止标志
+    private var currentSessionId = 0L  // 会话 ID，用于区分新旧请求
 
     // 收集音频数据 - 使用synchronized保护
     private val audioChunks = mutableListOf<ByteArray>()
@@ -66,10 +67,14 @@ class EdgeTtsService {
 
     private fun synthesizeWithRetry(text: String, voice: String, callback: Callback, retryCount: Int) {
         if (!isSynthesizing.compareAndSet(false, true)) {
+            Log.w(TAG, "synthesize: isSynthesizing=true, 拒绝请求")
             callback.onError("正在合成中，请稍候")
             return
         }
         shouldStop = false
+        val sessionId = System.currentTimeMillis()
+        currentSessionId = sessionId
+        Log.i(TAG, "synthesize: sessionId=$sessionId, voice=$voice, text='${text.take(30)}...'")
 
         synchronized(audioChunks) {
             audioChunks.clear()
@@ -132,6 +137,10 @@ class EdgeTtsService {
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                if (currentSessionId != sessionId) {
+                    Log.w(TAG, "onMessage: 忽略旧会话消息 (current=$currentSessionId, msg=$sessionId)")
+                    return
+                }
                 if (text.contains("Path:turn.start")) {
                     Log.i(TAG, "Synthesis started")
                 } else if (text.contains("Path:turn.end")) {
@@ -174,7 +183,12 @@ class EdgeTtsService {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e(TAG, "Edge TTS WebSocket failure (attempt ${retryCount + 1}/$MAX_RETRIES)", t)
+                Log.e(TAG, "Edge TTS WebSocket failure (attempt ${retryCount + 1}/$MAX_RETRIES, sessionId=$sessionId)", t)
+                // 忽略旧会话的失败回调
+                if (currentSessionId != sessionId) {
+                    Log.w(TAG, "onFailure: 忽略旧会话回调")
+                    return
+                }
                 isSynthesizing.set(false)
                 cancelTimeout()
 
@@ -199,7 +213,9 @@ class EdgeTtsService {
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.i(TAG, "Edge TTS WebSocket closed")
+                Log.i(TAG, "Edge TTS WebSocket closed, sessionId=$sessionId")
+                // 忽略旧会话的关闭回调
+                if (currentSessionId != sessionId) return
                 isSynthesizing.set(false)
                 cancelTimeout()
             }

@@ -1452,6 +1452,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
     /**
      * 使用 Android 原生 TTS 合成语音 -> WAV 转 PCM -> 推送给 DUIX 数字人
+     * 如果 synthesizeToFile 不可用，自动降级到 speakDirect 模式
      */
     private fun synthesizeWithAndroidTts(text: String, currentDuix: DUIX) {
         if (!::androidTtsService.isInitialized || !androidTtsService.isReady()) {
@@ -1479,6 +1480,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                                 currentDuix.startPush()
                             }
 
+                            // 分块推送 PCM
                             var offset = 0
                             var chunkCount = 0
                             while (offset < pcmData.size) {
@@ -1520,6 +1522,18 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 override fun onComplete() {
                     Log.i(TAG, "Android TTS 合成完成")
                     // PCM 推送和 IDLE 恢复在 onPcmData 回调中处理
+                    // speakDirect 模式下，onComplete 在 TTS 播放完成后触发
+                    // 此时需要恢复 IDLE 状态
+                    runOnUiThread {
+                        cancelSpeakingTimeout()
+                        cancelTtsCompletionRecovery()
+                        if (currentState == State.SPEAKING) {
+                            setState(State.IDLE)
+                            updateStatus("Ready")
+                            updateUI()
+                            scheduleAutoListen()
+                        }
+                    }
                 }
 
                 override fun onError(error: String) {
