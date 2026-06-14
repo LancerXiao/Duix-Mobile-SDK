@@ -1,86 +1,110 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- AI message item: avatar + white bubble, left-aligned -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:gravity="start"
-    android:paddingStart="4dp"
+    android:orientation="horizontal"
+    android:gravity="start|bottom"
+    android:paddingStart="12dp"
     android:paddingEnd="48dp"
-    android:paddingTop="6dp"
-    android:paddingBottom="6dp">
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
 
+    <!-- AI avatar -->
     <TextView
-        android:id="@+id/tvMessageText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:background="@drawable/bg_chat_bubble"
-        android:elevation="2dp"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
-        android:paddingTop="10dp"
-        android:paddingBottom="10dp"
+        android:id="@+id/tvAvatar"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginBottom="2dp"
+        android:gravity="center"
+        android:background="@drawable/bg_avatar_ai"
+        android:text="AI"
         android:textColor="@color/white"
-        android:textSize="14sp"
-        android:lineSpacingExtra="2dp"
-        android:maxWidth="280dp" />
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:elevation="2dp" />
 
-    <!-- 思考中三圆点（豆包/Coze 风格）：3 个 View 错相位跳动 -->
     <LinearLayout
-        android:id="@+id/tvThinking"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:layout_marginTop="4dp"
-        android:background="@drawable/bg_chat_bubble"
-        android:elevation="2dp"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
-        android:paddingTop="12dp"
-        android:paddingBottom="12dp"
-        android:visibility="gone">
+        android:orientation="vertical">
 
-        <View
-            android:id="@+id/dot1"
-            android:layout_width="7dp"
-            android:layout_height="7dp"
-            android:layout_marginEnd="4dp"
-            android:background="@drawable/dot_thinking" />
+        <!-- AI text bubble -->
+        <TextView
+            android:id="@+id/tvMessageText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_chat_bubble"
+            android:elevation="2dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:textColor="#1F2937"
+            android:textSize="15sp"
+            android:lineSpacingExtra="3dp"
+            android:maxWidth="300dp" />
 
-        <View
-            android:id="@+id/dot2"
-            android:layout_width="7dp"
-            android:layout_height="7dp"
-            android:layout_marginEnd="4dp"
-            android:background="@drawable/dot_thinking" />
+        <!-- Thinking dots (Coze style) -->
+        <LinearLayout
+            android:id="@+id/tvThinking"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/bg_chat_bubble"
+            android:elevation="2dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp"
+            android:visibility="gone">
 
-        <View
-            android:id="@+id/dot3"
-            android:layout_width="7dp"
-            android:layout_height="7dp"
-            android:background="@drawable/dot_thinking" />
+            <View
+                android:id="@+id/dot1"
+                android:layout_width="7dp"
+                android:layout_height="7dp"
+                android:layout_marginEnd="5dp"
+                android:background="@drawable/dot_thinking" />
+
+            <View
+                android:id="@+id/dot2"
+                android:layout_width="7dp"
+                android:layout_height="7dp"
+                android:layout_marginEnd="5dp"
+                android:background="@drawable/dot_thinking" />
+
+            <View
+                android:id="@+id/dot3"
+                android:layout_width="7dp"
+                android:layout_height="7dp"
+                android:background="@drawable/dot_thinking" />
+
+        </LinearLayout>
+
+        <!-- Action buttons row -->
+        <LinearLayout
+            android:id="@+id/llAiActions"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="2dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:id="@+id/btnRegenerate"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:padding="4dp"
+                android:background="@drawable/selector_regenerate_ripple"
+                android:src="@drawable/ic_regenerate"
+                android:contentDescription="Regenerate"
+                xmlns:app="http://schemas.android.com/apk/res-auto"
+                app:tint="#666666" />
+
+        </LinearLayout>
 
     </LinearLayout>
 
-    <!-- [Phase 5.4 P1-3] 操作按钮行：仅最新 AI 消息显示 -->
-    <LinearLayout
-        android:id="@+id/llAiActions"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="4dp"
-        android:visibility="gone">
-
-        <ImageView
-            android:id="@+id/btnRegenerate"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:padding="4dp"
-            android:background="@drawable/selector_regenerate_ripple"
-            android:src="@drawable/ic_regenerate"
-            android:contentDescription="重新生成"
-            app:tint="@color/white"
-            xmlns:app="http://schemas.android.com/apk/res-auto" />
-
-    </LinearLayout>
 </LinearLayout>
