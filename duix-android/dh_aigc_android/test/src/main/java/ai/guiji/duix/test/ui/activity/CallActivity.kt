@@ -976,8 +976,11 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         lastPartialTimeMs = System.currentTimeMillis()
                     }
                     runOnUiThread {
-                        updateStatus("Heard: $text")
-                        // 重置文字稳定检测定时器：1.5秒内 partial 不变就自动触发
+                        // [P1] LISTENING 实时字幕：显示用户说话的实时转写
+                        if (text.isNotEmpty()) {
+                            showUserBubbleStreaming(text)
+                        }
+                        // 重置文字稳定检测定时器：超过 STABLE_TEXT_TIMEOUT_MS partial 不变就自动触发
                         handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
                         if (text.isNotEmpty()) {
                             handlerAutoFinalize.postDelayed(autoFinalizeRunnable, STABLE_TEXT_TIMEOUT_MS)
@@ -1019,6 +1022,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         // 错误时清理文字稳定定时器和累积文本
                         handlerAutoFinalize.removeCallbacks(autoFinalizeRunnable)
                         lastPartialText = ""
+                        // [P1] 取消流式用户气泡（如果有）
+                        cancelStreamingUserBubble()
                         // 用户主动停止后，错误信息也不再显示
                         if (userStoppedAsr) {
                             Log.i(TAG, "用户已主动停止，丢弃迟到的onError: $error")
@@ -1081,6 +1086,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             sendToLlm(pendingText)
         } else {
             Log.i(TAG, "用户停止，无累积文本可发送")
+            // [P1] 取消流式用户气泡（如果有）
+            cancelStreamingUserBubble()
             setState(State.IDLE)
             updateStatus("Ready")
             updateUI()
@@ -1106,7 +1113,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         }
 
         // [Phase 2.2] 添加用户消息到历史
-        messageAdapter.append(MessageData(MessageData.Role.USER, text))
+        // [P1] 如果已有流式用户气泡（LISTENING 实时字幕），固定文本；否则追加新气泡
+        finalizeUserBubble(text)
         scrollMessagesToBottom()
 
         // 走 LLM 调用链（不再自己 append USER，由 invokeLlm 接管）
@@ -2173,6 +2181,69 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 messageAdapter.append(MessageData(MessageData.Role.AI, text))
                 scrollMessagesToBottom()
             }
+        }
+    }
+
+    /**
+     * [P1] LISTENING 实时字幕：显示用户说话的实时转写
+     * 首次调用创建用户气泡，后续调用更新同一条气泡
+     * 在 onFinalResult 时由 finalizeUserBubble 固定文本
+     */
+    private var streamingUserBubbleActive = false
+
+    private fun showUserBubbleStreaming(text: String) {
+        if (text.isEmpty()) return
+        if (streamingUserBubbleActive) {
+            // 更新已有的用户气泡
+            val msgs = messageAdapter.snapshot()
+            if (msgs.isNotEmpty() && msgs.last().role == MessageData.Role.USER) {
+                messageAdapter.updateLast(MessageData(MessageData.Role.USER, text))
+            } else {
+                // 异常情况：flag 为 true 但最后一条不是 USER，重新创建
+                messageAdapter.append(MessageData(MessageData.Role.USER, text))
+                scrollMessagesToBottom()
+            }
+        } else {
+            // 首次创建用户气泡
+            messageAdapter.append(MessageData(MessageData.Role.USER, text))
+            scrollMessagesToBottom()
+            streamingUserBubbleActive = true
+        }
+    }
+
+    /**
+     * [P1] 固定用户气泡文本（onFinalResult 时调用）
+     * 如果已有流式气泡，更新为最终文本；否则追加新气泡
+     */
+    private fun finalizeUserBubble(text: String) {
+        if (streamingUserBubbleActive) {
+            val msgs = messageAdapter.snapshot()
+            if (msgs.isNotEmpty() && msgs.last().role == MessageData.Role.USER) {
+                messageAdapter.updateLast(MessageData(MessageData.Role.USER, text))
+            } else {
+                messageAdapter.append(MessageData(MessageData.Role.USER, text))
+                scrollMessagesToBottom()
+            }
+            streamingUserBubbleActive = false
+        } else {
+            messageAdapter.append(MessageData(MessageData.Role.USER, text))
+            scrollMessagesToBottom()
+        }
+    }
+
+    /**
+     * [P1] 取消流式用户气泡（用户停止说话且无有效文本时）
+     */
+    private fun cancelStreamingUserBubble() {
+        if (streamingUserBubbleActive) {
+            val msgs = messageAdapter.snapshot()
+            if (msgs.isNotEmpty() && msgs.last().role == MessageData.Role.USER) {
+                val last = msgs.last()
+                if (last.content.isBlank()) {
+                    messageAdapter.removeAt(msgs.size - 1)
+                }
+            }
+            streamingUserBubbleActive = false
         }
     }
 
