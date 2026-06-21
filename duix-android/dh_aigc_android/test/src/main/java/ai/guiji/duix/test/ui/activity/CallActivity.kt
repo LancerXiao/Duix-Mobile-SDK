@@ -49,18 +49,23 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
     companion object {
         const val GL_CONTEXT_VERSION = 2
-        private const val AUTO_LISTEN_DELAY_MS = 800L
+        // [P1] 缩短 auto-listen 延迟，让对话更流畅（专业产品 200-500ms）
+        private const val AUTO_LISTEN_DELAY_MS = 500L
         // 数字人说话结束后 auto-listen 的额外延迟，给音频硬件足够时间停止播放
         // 防止 ASR 录到数字人自己的声音（回声问题）
-        private const val POST_SPEAKING_LISTEN_DELAY_MS = 1200L
+        // [P1] 从 1200ms 缩短到 900ms，平衡回声防护和响应速度
+        private const val POST_SPEAKING_LISTEN_DELAY_MS = 900L
         // ASR partial 文字稳定超时（毫秒）：超过这个时间 partial 不变就认为说话结束
-        private const val STABLE_TEXT_TIMEOUT_MS = 1200L
+        // [P1] 从 1200ms 缩短到 900ms，更快触发 LLM 请求
+        private const val STABLE_TEXT_TIMEOUT_MS = 900L
         // [Bug fix] SPEAKING 状态超时保护：如果 DUIX SDK 没有回调 AUDIO_PLAY_END，
         // 4 秒后自动恢复到 IDLE，防止状态卡死
+        // [流式 TTS] 此超时在流式模式下按句重置，仅检测句间间隔
         private const val SPEAKING_TIMEOUT_MS = 4000L
         // [Bug fix] THINKING 状态超时保护：如果 LLM 请求挂起无响应，
-        // 15 秒后自动恢复到 IDLE，防止状态永远卡在 THINKING
-        private const val THINKING_TIMEOUT_MS = 15000L
+        // 12 秒后自动恢复到 IDLE，防止状态永远卡在 THINKING
+        // [P1] 从 15s 缩短到 12s
+        private const val THINKING_TIMEOUT_MS = 12000L
         // 音频采样率常量
         // Qwen TTS (qwen3-tts-flash-realtime) 固定输出 24kHz PCM
         private const val QWEN_TTS_SAMPLE_RATE = 24000
@@ -388,7 +393,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         if (currentState == State.THINKING) {
             Log.w(TAG, "[BUG-FIX] THINKING 超时 ${THINKING_TIMEOUT_MS}ms，强制恢复 IDLE")
             setState(State.IDLE)
-            updateStatus("Timeout")
+            updateStatus("Timed out")
             updateUI()
             showAiBubble(thinking = false, text = "Request timeout, please retry")
             scheduleAutoListen()
@@ -611,7 +616,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             binding.glTextureView.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
         } catch (e: Exception) {
             Log.e(TAG, "初始化渲染器失败", e)
-            showLoadingError("Renderer initialization failed", e.message ?: "Unknown error")
+            showLoadingError("Setup failed", "Please restart the app")
             return
         }
 
@@ -620,7 +625,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             initDuiX()
         } catch (e: Exception) {
             Log.e(TAG, "初始化DUIX失败", e)
-            showLoadingError("Initialization failed", e.message ?: "Unknown error")
+            showLoadingError("Setup failed", "Please restart the app")
         }
     }
 
@@ -669,7 +674,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         } catch (e: Exception) {
                             Log.e(TAG, "诊断异常: ${e.message}")
                         }
-                        showLoadingError("Initialization failed", msg ?: "Unknown error")
+                        showLoadingError("Setup failed", "Please restart the app")
                     }
                 }
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_START -> {
@@ -696,7 +701,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         Log.e(TAG, "AUDIO_PLAY_ERROR: 数字人播放出错: $msg")
                         cancelSpeakingTimeout()
                         cancelTtsCompletionRecovery()
-                        updateStatus("Playback error")
+                        updateStatus("Voice error")
                         setState(State.IDLE)
                         updateUI()
                         scheduleAutoListenAfterSpeaking()
@@ -933,7 +938,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         if (currentState == State.LISTENING) return
         if (!::asrService.isInitialized) {
             setState(State.IDLE)
-            updateStatus("ASR not ready")
+            updateStatus("Voice not ready")
             updateUI()
             return
         }
@@ -1026,9 +1031,9 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                             updateStatus("No speech detected")
                             scheduleAutoListen()
                         } else {
-                            // 其他 ASR 错误弹短 banner
-                            updateStatus("ASR error")
-                            showErrorBanner("ASR error: $error", 2000)
+                            // 其他 ASR 错误不暴露技术细节
+                            updateStatus("Listening error")
+                            scheduleAutoListen()
                         }
                     }
                 }
@@ -1043,7 +1048,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         } catch (e: Exception) {
             Log.e(TAG, "启动语音识别异常", e)
             setState(State.IDLE)
-            updateStatus("ASR start failed")
+            updateStatus("Cannot start listening")
             updateUI()
             scheduleAutoListen()
         }
@@ -1269,7 +1274,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             stopAllTtsEngines()
             try { duix?.stopPush() } catch (ex: Exception) { Log.e(TAG, "LLM异常 stopPush异常", ex) }
             setState(State.IDLE)
-            updateStatus("Error")
+            updateStatus("Something went wrong")
             updateUI()
             scheduleAutoListen()
         }
@@ -1322,19 +1327,19 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
         when (currentTtsEngine) {
             TtsEngine.QWEN_TTS -> {
-                updateStatus("Synthesizing")
+                updateStatus("Speaking")
                 synthesizeWithQwenTts(text, currentDuix, isStreaming = false)
             }
             TtsEngine.MIMO_TTS -> {
-                updateStatus("Synthesizing")
+                updateStatus("Speaking")
                 synthesizeWithMimoTts(text, currentDuix, isStreaming = false)
             }
             TtsEngine.EDGE_TTS -> {
-                updateStatus("Synthesizing")
+                updateStatus("Speaking")
                 synthesizeWithEdgeTts(text, currentDuix, isStreaming = false)
             }
             TtsEngine.ANDROID_TTS -> {
-                updateStatus("Synthesizing")
+                updateStatus("Speaking")
                 synthesizeWithAndroidTts(text, currentDuix, isStreaming = false)
             }
         }
@@ -1391,7 +1396,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                             Log.e(TAG, "Qwen TTS push 音频异常", e)
                             runOnUiThread {
                                 setState(State.IDLE)
-                                updateStatus("Playback failed")
+                                updateStatus("Voice error")
                                 updateUI()
                                 scheduleAutoListen()
                             }
@@ -1493,7 +1498,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                             Log.e(TAG, "MiMo TTS push 音频异常", e)
                             runOnUiThread {
                                 setState(State.IDLE)
-                                updateStatus("Playback failed")
+                                updateStatus("Voice error")
                                 updateUI()
                                 scheduleAutoListen()
                             }
@@ -1770,7 +1775,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                                     onStreamingTtsSentenceDone("Android TTS(push-exception)")
                                 } else {
                                     cancelSpeakingTimeout()
-                                    updateStatus("Playback failed")
+                                    updateStatus("Voice error")
                                     setState(State.IDLE)
                                     updateUI()
                                     scheduleAutoListen()
@@ -1811,7 +1816,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                             onStreamingTtsSentenceDone("Android TTS(error)")
                         } else {
                             cancelSpeakingTimeout()
-                            updateStatus("Synthesis failed")
+                            updateStatus("Voice unavailable")
                             setState(State.IDLE)
                             updateUI()
                             scheduleAutoListen()
@@ -1826,7 +1831,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     onStreamingTtsSentenceDone("Android TTS(exception)")
                 } else {
                     cancelSpeakingTimeout()
-                    updateStatus("Synthesis failed")
+                    updateStatus("Voice unavailable")
                     setState(State.IDLE)
                     updateUI()
                     scheduleAutoListen()
@@ -1962,7 +1967,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     Log.w(TAG, "[DIAG] Audio Focus 丢失导致录音冲突，自动停止录音")
                     runOnUiThread {
                         stopListening()
-                        showErrorBanner("Audio focus lost, recording stopped", 3000)
+                        showErrorBanner("Recording interrupted", 3000)
                     }
                 }
             }
@@ -2671,9 +2676,9 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         // 重置 Edge TTS 失败计数（切换后给新引擎一次机会）
         edgeTtsFailCount = 0
         saveTtsEnginePreference(newEngine)
-        showToast("TTS: ${getTtsEngineDisplayName(newEngine)}")
+        showToast("Voice: ${getTtsEngineDisplayName(newEngine)}")
         updateUI()
-        updateStatus("TTS: ${getTtsEngineDisplayName(newEngine)}")
+        updateStatus("Ready")
     }
 
     private fun getTtsEngineDisplayName(engine: TtsEngine): String = when (engine) {
@@ -2757,9 +2762,9 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         val newEngine = asrEngineCycle[nextIndex]
         currentAsrEngine = newEngine
         saveAsrEnginePreference(newEngine)
-        showToast("ASR: ${getAsrEngineDisplayName(newEngine)} (skeleton phase, not connected to HybridAsrService)")
+        showToast("Voice recognition: ${getAsrEngineDisplayName(newEngine)}")
         updateUI()
-        updateStatus("ASR: ${getAsrEngineDisplayName(newEngine)}")
+        updateStatus("Ready")
     }
 
     private fun getAsrEngineDisplayName(engine: AsrEngine): String = when (engine) {
@@ -3010,7 +3015,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             currentTtsEngine = targetEngine
             saveTtsEnginePreference(targetEngine)
             Log.i(TAG, "[SELF-TEST] 切换 TTS 引擎到: ${getTtsEngineDisplayName(targetEngine)}")
-            showErrorBanner("TTS switch: ${getTtsEngineDisplayName(targetEngine)}", 2000)
+            showErrorBanner("Voice: ${getTtsEngineDisplayName(targetEngine)}", 2000)
         }
     }
 
@@ -3032,7 +3037,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 currentTtsEngine = nextEngine
                 val newName = getTtsEngineDisplayName(nextEngine)
                 Log.i(TAG, "[AUTO-FALLBACK] TTS 引擎降级: $oldName → $newName")
-                showErrorBanner("TTS auto-fallback: $oldName → $newName", 3000)
+                // 静默降级，不向用户展示技术细节
                 return
             }
         }
@@ -3247,7 +3252,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             try { if (::androidTtsService.isInitialized) androidTtsService.stop() } catch (e: Exception) { Log.e(TAG, "停止Android TTS异常", e) }
             try { duix?.stopAudio() } catch (_: Exception) {}
             setState(State.IDLE)
-            updateStatus("Recovered: $reason")
+            updateStatus("Ready")
             updateUI()
             scheduleAutoListen()
         }
@@ -3260,7 +3265,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         runOnUiThread {
             when (alert.type) {
                 PipelineHealthMonitor.AlertType.STATE_STUCK -> {
-                    showErrorBanner("Auto-recovered: ${alert.state}", 3000)
+                    // 静默恢复，不向用户展示技术细节
                 }
                 // 以下类型仅记录日志，不弹 banner
                 PipelineHealthMonitor.AlertType.STATE_ILLEGAL_TRANSITION,

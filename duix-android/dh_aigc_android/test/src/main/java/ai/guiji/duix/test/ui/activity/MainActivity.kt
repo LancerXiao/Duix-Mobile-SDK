@@ -254,7 +254,7 @@ class MainActivity : Activity() {
                             arrayOf(AiConfig.AGNES_AI_API_KEY, AiConfig.MIMO_API_KEY),
                             arrayOf(AiConfig.LLM_MODEL, AiConfig.MIMO_LLM_MODEL))
                         1 -> showTtsEngineSelector()
-                        2 -> showToast("ASR engine: System default")
+                        2 -> showToast("Voice recognition: System default")
                         3 -> showAboutDialog()
                     }
                 }
@@ -293,7 +293,7 @@ class MainActivity : Activity() {
             .setSingleChoiceItems(names, selectedIdx) { dialog, which ->
                 prefs.edit().putString("tts_engine", names[which]).apply()
                 dialog.dismiss()
-                showToast("TTS engine: ${names[which]}")
+                showToast("Voice: ${names[which]}")
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -421,7 +421,7 @@ class MainActivity : Activity() {
             }
         } catch (e: Throwable) {
             Log.e(TAG, "onModelCardClicked 失败", e)
-            showToast("Error: ${e.message}")
+            showToast("Something went wrong, please try again")
         }
     }
 
@@ -461,7 +461,7 @@ class MainActivity : Activity() {
                     mainHandler.post {
                         mDownloadStatus?.text = "Base config download failed: $message"
                         mDownloadStatus?.setTextColor(ERROR_COLOR)
-                        showToast("Download failed: $message")
+                        showToast("Download failed, please try again")
                     }
                 }
             })
@@ -504,7 +504,7 @@ class MainActivity : Activity() {
                 mainHandler.post {
                     mDownloadStatus?.text = "Model download failed: $message"
                     mDownloadStatus?.setTextColor(ERROR_COLOR)
-                    showToast("Download failed: $message")
+                    showToast("Download failed, please try again")
                 }
             }
         })
@@ -557,7 +557,7 @@ class MainActivity : Activity() {
                 startActivity(intent)
             } catch (e: Throwable) {
                 Log.e(TAG, "启动CallActivity失败", e)
-                showToast("Failed to start: ${e.message}")
+                showToast("Unable to start, please try again")
             }
         } catch (e: Throwable) {
             Log.e(TAG, "onPlayClicked失败", e)
