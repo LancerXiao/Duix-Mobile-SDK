@@ -200,6 +200,14 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             cancelAutoListen()
         }
 
+        // [P2] 字幕自动淡出：进入 IDLE 时延迟淡出，进入活跃状态时立即显示
+        // 对标豆包/千问：对话结束后字幕淡出，回归沉浸式数字人视图
+        if (newState == State.IDLE) {
+            scheduleSubtitleFade()
+        } else {
+            showSubtitles()
+        }
+
         // 对话结束后恢复用户选择的TTS引擎（fallback只是临时降级）
         if (newState == State.IDLE && currentTtsEngine != userSelectedTtsEngine) {
             Log.i(TAG, "[STATE] 恢复用户选择的TTS引擎: ${getTtsEngineDisplayName(currentTtsEngine)} → ${getTtsEngineDisplayName(userSelectedTtsEngine)}")
@@ -278,6 +286,51 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
 
     // TTS 完成后的延迟恢复 Runnable（stopPush 后 2s 如果 AUDIO_PLAY_END 没来就恢复 IDLE）
     private var ttsCompletionRunnable: Runnable? = null
+
+    // [P2] 字幕自动淡出：IDLE 状态下 4 秒后淡出消息列表，让用户聚焦数字人
+    // 对标豆包/千问：对话结束后字幕不永久占据屏幕，回归沉浸式数字人视图
+    private val subtitleFadeHandler = Handler(Looper.getMainLooper())
+    private val subtitleFadeRunnable = Runnable {
+        if (currentState == State.IDLE) {
+            try {
+                binding.messagesList.animate()
+                    .alpha(0f)
+                    .setDuration(400L)
+                    .withEndAction { binding.messagesList.visibility = View.GONE }
+                    .start()
+            } catch (e: Exception) {
+                Log.e(TAG, "字幕淡出异常", e)
+            }
+        }
+    }
+    private fun scheduleSubtitleFade() {
+        subtitleFadeHandler.removeCallbacks(subtitleFadeRunnable)
+        subtitleFadeHandler.postDelayed(subtitleFadeRunnable, 4000L)
+    }
+    private fun cancelSubtitleFade() {
+        subtitleFadeHandler.removeCallbacks(subtitleFadeRunnable)
+    }
+    // [P2] 显示字幕（带淡入动画），新对话开始时调用
+    private fun showSubtitles() {
+        cancelSubtitleFade()
+        try {
+            if (binding.messagesList.visibility != View.VISIBLE) {
+                binding.messagesList.alpha = 0f
+                binding.messagesList.visibility = View.VISIBLE
+                binding.messagesList.animate()
+                    .alpha(1f)
+                    .setDuration(300L)
+                    .start()
+            } else if (binding.messagesList.alpha < 1f) {
+                binding.messagesList.animate()
+                    .alpha(1f)
+                    .setDuration(200L)
+                    .start()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "显示字幕异常", e)
+        }
+    }
 
     // [流式 TTS 协调器] 确保 startPush/stopPush 在多句合成时只调用一次
     // startPush() 在第一句 PCM 到达时调用一次
@@ -760,6 +813,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         val greeting = "Hi there! I'm XiaoDu, your digital human assistant. Feel free to ask me anything, or just press and hold the microphone below to start talking."
         messageAdapter.append(MessageData(MessageData.Role.AI, greeting))
         scrollMessagesToBottom()
+        // [P2] 确保字幕可见（取消可能 pending 的淡出）
+        showSubtitles()
         // 开场白直接设 SPEAKING（不经过 THINKING），因为不需要 LLM
         // 直接赋值 currentState 而非 setState()，避免触发非法转换自动修正
         currentState = State.SPEAKING
@@ -2059,6 +2114,11 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             State.SPEAKING -> "Tap to interrupt"
         }
 
+        // [P2] 顶部状态指示器优化：IDLE 时隐藏顶部状态药丸（底部已有状态图标+麦克风标签）
+        // 活跃状态时显示，让用户清楚当前处于哪个环节
+        // 对标豆包/千问：IDLE 时界面极简，聚焦数字人本身
+        binding.tvStatus.visibility = if (currentState == State.IDLE) View.GONE else View.VISIBLE
+
         // 打断提示 (Phase 2.5) - SPEAKING 时显示在数字人上方
         binding.tvInterruptHint.visibility = if (currentState == State.SPEAKING) View.VISIBLE else View.GONE
 
@@ -2393,6 +2453,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 timestampMs = System.currentTimeMillis()
             )
             messageAdapter.append(sysMsg)
+            // [P2] 确保字幕可见（可能已被之前的淡出隐藏）
+            showSubtitles()
             // 5) 更新 UI
             updateStatus("New chat")
             updateUI()
@@ -2998,6 +3060,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         cancelSpeakingTimeout()
         cancelThinkingTimeout()
         cancelTtsCompletionRecovery()
+        // [P2] 清理字幕淡出回调
+        cancelSubtitleFade()
         try {
             if (::asrService.isInitialized) asrService.destroy()
         } catch (e: Exception) {
