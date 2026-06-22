@@ -2299,7 +2299,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             val msgs = messageAdapter.snapshot()
             if (msgs.isNotEmpty() && msgs.last().role == MessageData.Role.USER) {
                 val last = msgs.last()
-                if (last.content.isBlank()) {
+                if (last.text.isBlank()) {
                     messageAdapter.removeAt(msgs.size - 1)
                 }
             }
