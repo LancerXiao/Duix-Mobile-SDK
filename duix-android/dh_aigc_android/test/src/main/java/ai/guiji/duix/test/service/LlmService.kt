@@ -187,7 +187,11 @@ class LlmService {
                                     } else {
                                         ""
                                     }
-                                    if (content.isNotEmpty()) {
+                                    // [Bug fix] 过滤字符串 "null"（LLM API 有时返回 JSON null 被转为字符串 "null"）
+                                    // 与 CallActivity.invokeLlm 的 onToken 过滤保持一致
+                                    // 避免 fullText 与 CallActivity 的 fullResponse 长度不一致
+                                    // 导致 onComplete 中 remaining 截取位置错误（可能朗读到 "thinking" 等异常文本）
+                                    if (content.isNotEmpty() && !content.equals("null", ignoreCase = true)) {
                                         fullText.append(content)
                                         lastValidText = content
                                         callback.onToken(content)

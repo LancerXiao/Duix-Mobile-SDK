@@ -339,6 +339,13 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     private val streamingTtsPending = java.util.concurrent.atomic.AtomicInteger(0)
     @Volatile private var streamingLlmComplete = false
 
+    // [Bug fix] 说话轮次计数器：用于区分迟到的 AUDIO_PLAY_END 回调
+    // 每次 startPush 时递增，AUDIO_PLAY_END 回调时检查是否属于当前轮次
+    private val speakGeneration = java.util.concurrent.atomic.AtomicInteger(0)
+
+    // [Bug fix] 确保 stopPush 在一次说话轮次中只调用一次，避免竞态条件双重调用
+    private val stopPushCalled = java.util.concurrent.atomic.AtomicBoolean(false)
+
     /**
      * 重置流式 TTS 协调器状态（每次 invokeLlm 开始时调用）
      */
@@ -346,6 +353,7 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         streamingPushStarted.set(false)
         streamingTtsPending.set(0)
         streamingLlmComplete = false
+        stopPushCalled.set(false)
     }
 
     /**
@@ -359,6 +367,26 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
     }
 
     /**
+     * [Bug fix] 确保 stopPush 在一次说话轮次中只调用一次
+     * 使用 compareAndSet 避免竞态条件双重调用
+     */
+    private fun stopPushOnce(tag: String, onDone: () -> Unit) {
+        if (stopPushCalled.compareAndSet(false, true)) {
+            Log.i(TAG, "[流式TTS] $tag: 调用 stopPush()")
+            Thread {
+                try {
+                    duix?.stopPush()
+                } catch (e: Throwable) {
+                    Log.e(TAG, "[流式TTS] $tag stopPush 异常", e)
+                }
+                runOnUiThread(onDone)
+            }.start()
+        } else {
+            Log.i(TAG, "[流式TTS] $tag: stopPush 已调用过，跳过")
+        }
+    }
+
+    /**
      * 流式 TTS：标记一句合成完成（pending -1），检查是否所有句子都完成
      * 当 LLM 已完成且所有 TTS 句子都合成完，调用 stopPush + scheduleTtsCompletionRecovery
      */
@@ -366,18 +394,11 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         val remaining = streamingTtsPending.decrementAndGet()
         Log.i(TAG, "[流式TTS] $tag 句子完成，剩余 pending=$remaining, llmComplete=$streamingLlmComplete")
         if (streamingLlmComplete && remaining <= 0) {
-            Log.i(TAG, "[流式TTS] 所有句子合成完成，调用 stopPush()")
-            Thread {
-                try {
-                    duix?.stopPush()
-                } catch (e: Throwable) {
-                    Log.e(TAG, "[流式TTS] stopPush 异常", e)
-                }
-                runOnUiThread {
-                    cancelSpeakingTimeout()
-                    scheduleTtsCompletionRecovery("Streaming TTS")
-                }
-            }.start()
+            Log.i(TAG, "[流式TTS] 所有句子合成完成")
+            stopPushOnce("onStreamingTtsSentenceDone($tag)") {
+                cancelSpeakingTimeout()
+                scheduleTtsCompletionRecovery("Streaming TTS")
+            }
         }
     }
 
@@ -391,20 +412,20 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         Log.i(TAG, "[流式TTS] LLM 完成，剩余 TTS pending=$remaining")
         if (remaining <= 0) {
             // 没有 pending 的 TTS，说明要么没启动流式 TTS，要么全部已完成
-            // 如果 startPush 已调用过，需要 stopPush
             if (streamingPushStarted.get()) {
-                Log.i(TAG, "[流式TTS] LLM 完成且无 pending TTS，调用 stopPush()")
-                Thread {
-                    try {
-                        duix?.stopPush()
-                    } catch (e: Throwable) {
-                        Log.e(TAG, "[流式TTS] stopPush 异常", e)
-                    }
-                    runOnUiThread {
-                        cancelSpeakingTimeout()
-                        scheduleTtsCompletionRecovery("Streaming TTS")
-                    }
-                }.start()
+                stopPushOnce("onStreamingLlmComplete") {
+                    cancelSpeakingTimeout()
+                    scheduleTtsCompletionRecovery("Streaming TTS")
+                }
+            } else {
+                // [Bug fix] startPush 从未调用过（TTS 返回空音频或全部失败）
+                // 不需要等待 AUDIO_PLAY_END，直接恢复 IDLE
+                Log.i(TAG, "[流式TTS] LLM 完成且无 pending TTS，但 startPush 从未调用，直接恢复 IDLE")
+                cancelSpeakingTimeout()
+                setState(State.IDLE)
+                updateStatus("Ready")
+                updateUI()
+                scheduleAutoListen()
             }
         }
     }
@@ -740,9 +761,17 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 }
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_END -> {
                     runOnUiThread {
+                        // [Bug fix] 检查是否属于当前说话轮次，丢弃迟到的回调
+                        // 防止上一轮迟到的 AUDIO_PLAY_END 中断当前轮的 SPEAKING
+                        if (currentState != State.SPEAKING) {
+                            Log.i(TAG, "AUDIO_PLAY_END: 当前状态=$currentState 非 SPEAKING，丢弃迟到回调")
+                            return@runOnUiThread
+                        }
                         Log.i(TAG, "AUDIO_PLAY_END: 数字人播放完成")
                         cancelSpeakingTimeout()
                         cancelTtsCompletionRecovery()
+                        // [Bug fix] 清理 TTS 引擎状态，确保下一轮 isSynthesizing 已重置
+                        stopAllTtsEngines()
                         setState(State.IDLE)
                         updateUI()
                         // 数字人说话结束后使用更长延迟启动 ASR，防止录到回声
@@ -1211,8 +1240,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 override fun onToken(token: String) {
                     // 过滤 "null" token（LLM API 有时返回 JSON null 被转为字符串 "null"）
                     if (token.equals("null", ignoreCase = true)) return
-                    fullResponse.append(token)
                     runOnUiThread {
+                        // [Bug fix] 将 fullResponse 的 append 移入主线程，避免 StringBuilder 跨线程数据竞争
+                        // 原来在后台线程 append，主线程 toString，可能导致截取位置错误
+                        fullResponse.append(token)
                         showAiBubbleStreaming(fullResponse.toString())
                         updateStatus("Responding")
 
@@ -1284,6 +1315,14 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                             // 非流式 fallback：完整文本一次性合成
                             synthesizeAndPlay(cleanText)
                         } else if (cleanText.isEmpty()) {
+                            // [Bug fix] 如果 TTS 已启动但 cleanText 为空，必须清理流式状态
+                            // 否则 streamingTtsPending 卡住，streamingLlmComplete 保持 false，stopPush 永不调用
+                            if (ttsStarted.get()) {
+                                Log.w(TAG, "[BUG-FIX] LLM onComplete: cleanText 为空但 TTS 已启动，清理流式状态")
+                                resetStreamingTtsState()
+                                stopAllTtsEngines()
+                                try { duix?.stopPush() } catch (e: Exception) { Log.e(TAG, "cleanText空 stopPush异常", e) }
+                            }
                             setState(State.IDLE)
                             updateStatus("Ready")
                             updateUI()
@@ -1428,7 +1467,9 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         Log.i(TAG, "尝试 Qwen TTS 合成: ${text.take(30)}... (streaming=$isStreaming)")
         val pushedOnce = java.util.concurrent.atomic.AtomicBoolean(false)
         try {
-            qwenTtsService.synthesize(text, AiConfig.TTS_DEFAULT_VOICE, object : QwenTtsService.Callback {
+            // [Bug fix] 流式模式使用 synthesizeStreaming，不使用 isSynthesizing 互斥锁
+            // 避免多句合成时第二句被拒绝导致 pending 计数器卡死
+            val synthCallback = object : QwenTtsService.Callback {
                 override fun onAudioData(pcmData: ByteArray) {
                     // Qwen TTS 输出 PCM 24kHz，DUIX 期望 16kHz，必须重采样
                     val resampledPcm = try {
@@ -1492,8 +1533,9 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                     Log.e(TAG, "Qwen TTS 错误: $error, fallback 到 MiMo TTS (streaming=$isStreaming)")
                     runOnUiThread {
                         if (isStreaming) {
-                            // [流式 TTS] 流式模式下不 fallback（避免 pending 计数混乱），直接标记本句完成
-                            qwenTtsService.stop()
+                            // [Bug fix] 流式模式下不调 stop()，避免使其他正在合成的句子 WebSocket 失效
+                            // 只标记本句完成，让 pending 计数器正确递减
+                            // 不 fallback（避免 pending 计数混乱），直接标记本句完成
                             onStreamingTtsSentenceDone("Qwen TTS(error)")
                         } else {
                             cancelSpeakingTimeout()
@@ -1508,7 +1550,13 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                         }
                     }
                 }
-            })
+            }
+            // [Bug fix] 流式模式使用 synthesizeStreaming（无互斥锁），非流式使用 synthesize
+            if (isStreaming) {
+                qwenTtsService.synthesizeStreaming(text, AiConfig.TTS_DEFAULT_VOICE, synthCallback)
+            } else {
+                qwenTtsService.synthesize(text, AiConfig.TTS_DEFAULT_VOICE, synthCallback)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Qwen TTS 启动异常", e)
             runOnUiThread {
@@ -3385,6 +3433,8 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             try { qwenTtsService.stop() } catch (_: Exception) {}
             try { mimoTtsService.stop() } catch (_: Exception) {}
             try { if (::androidTtsService.isInitialized) androidTtsService.stop() } catch (e: Exception) { Log.e(TAG, "停止Android TTS异常", e) }
+            // [Bug fix] 必须同时调用 stopPush()，否则 DUIX SDK 会留在 pushing 模式
+            try { duix?.stopPush() } catch (_: Exception) {}
             try { duix?.stopAudio() } catch (_: Exception) {}
             setState(State.IDLE)
             updateStatus("Ready")

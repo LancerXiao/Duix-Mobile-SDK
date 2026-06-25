@@ -78,6 +78,22 @@ class QwenTtsService {
         synthesizeInternal(text, voice, callback, 0)
     }
 
+    /**
+     * [Bug fix] 流式合成语音（不使用 isSynthesizing 互斥锁）
+     * 用于 LLM 流式输出的多句合成场景，每句独立 WebSocket 连接，互不干扰
+     * @param text 要合成的文本
+     * @param voice 音色
+     * @param callback 回调
+     */
+    fun synthesizeStreaming(text: String, voice: String = AiConfig.TTS_DEFAULT_VOICE, callback: Callback) {
+        if (text.isBlank()) {
+            callback.onError("文本为空")
+            return
+        }
+        // 流式模式不检查 isSynthesizing，每句独立连接
+        synthesizeInternalStreaming(text, voice, callback, 0)
+    }
+
     private fun synthesizeInternal(text: String, voice: String, callback: Callback, retryCount: Int) {
         if (isSynthesizing.getAndSet(true)) {
             callback.onError("正在合成中，请稍候")
@@ -248,6 +264,173 @@ class QwenTtsService {
         }
 
         webSocket = client.newWebSocket(request, listener)
+    }
+
+    /**
+     * [Bug fix] 流式合成内部实现（不使用 isSynthesizing 互斥锁）
+     * 每句独立 WebSocket 连接，互不干扰
+     * 不修改全局 webSocket/isSynthesizing 状态，避免影响其他句子
+     */
+    private fun synthesizeInternalStreaming(text: String, voice: String, callback: Callback, retryCount: Int) {
+        // 流式模式不设置 isSynthesizing，不修改全局 webSocket
+        // 每句使用独立的局部变量
+        val currentSessionId = sessionId.incrementAndGet()
+        var localWebSocket: WebSocket? = null
+        var localReceivedAudio = false
+        var localShouldStop = false
+        var localNoDataTimeout: Runnable? = null
+
+        Log.i(TAG, "Qwen TTS 流式合成 (第${retryCount + 1}次, session=$currentSessionId): voice=$voice, text=${text.take(30)}...")
+
+        val request = Request.Builder()
+            .url(AiConfig.TTS_WS_URL)
+            .addHeader("Authorization", "Bearer ${AiConfig.DASHSCOPE_API_KEY}")
+            .build()
+
+        val listener = object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (currentSessionId != sessionId.get()) {
+                    Log.w(TAG, "[流式] 忽略旧会话 onOpen (session=$currentSessionId)")
+                    return
+                }
+                Log.i(TAG, "[流式] TTS WebSocket 已连接 (session=$currentSessionId)")
+
+                // 无数据超时检测
+                localNoDataTimeout = Runnable {
+                    if (currentSessionId != sessionId.get() || localShouldStop) return@Runnable
+                    Log.w(TAG, "[流式] Qwen TTS 无数据超时, session=$currentSessionId")
+                    try { localWebSocket?.close(1000, "No data timeout") } catch (_: Exception) {}
+                    handleStreamingError("连接超时：${WS_NO_DATA_TIMEOUT_MS}ms 内未收到音频数据", callback, retryCount, text, voice, currentSessionId)
+                }
+                timeoutHandler.postDelayed(localNoDataTimeout!!, WS_NO_DATA_TIMEOUT_MS)
+
+                // 1. session.update
+                val sessionUpdate = JSONObject().apply {
+                    put("event_id", "event_" + UUID.randomUUID().toString().replace("-", "").take(16))
+                    put("type", "session.update")
+                    put("session", JSONObject().apply {
+                        put("voice", voice)
+                        put("mode", "server_commit")
+                        put("language_type", "auto")
+                        put("response_format", "pcm")
+                        put("sample_rate", SAMPLE_RATE)
+                    })
+                }
+                webSocket.send(sessionUpdate.toString())
+
+                // 2. input_text_buffer.append
+                val appendText = JSONObject().apply {
+                    put("event_id", "event_" + UUID.randomUUID().toString().replace("-", "").take(16))
+                    put("type", "input_text_buffer.append")
+                    put("text", text)
+                }
+                webSocket.send(appendText.toString())
+
+                // 3. input_text_buffer.commit
+                val commitText = JSONObject().apply {
+                    put("event_id", "event_" + UUID.randomUUID().toString().replace("-", "").take(16))
+                    put("type", "input_text_buffer.commit")
+                }
+                webSocket.send(commitText.toString())
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                if (currentSessionId != sessionId.get() || localShouldStop) return
+                try {
+                    val message = JSONObject(text)
+                    val eventType = message.optString("type", "")
+                    when (eventType) {
+                        "response.audio.delta" -> {
+                            if (!localReceivedAudio) {
+                                localReceivedAudio = true
+                                localNoDataTimeout?.let { timeoutHandler.removeCallbacks(it) }
+                            }
+                            val audioB64 = message.optString("delta", "")
+                            if (audioB64.isNotEmpty()) {
+                                try {
+                                    val audioBytes = android.util.Base64.decode(audioB64, android.util.Base64.DEFAULT)
+                                    if (audioBytes.isNotEmpty()) {
+                                        callback.onAudioData(audioBytes)
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "[流式] Base64 解码失败", e)
+                                }
+                            }
+                        }
+                        "response.done", "response.audio.done" -> {
+                            Log.i(TAG, "[流式] TTS 响应完成 (session=$currentSessionId)")
+                        }
+                        "session.finished" -> {
+                            Log.i(TAG, "[流式] TTS session 结束 (session=$currentSessionId)")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "[流式] Parse TTS message error", e)
+                }
+            }
+
+            override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                if (currentSessionId != sessionId.get() || localShouldStop) return
+                val data = bytes.toByteArray()
+                if (data.isNotEmpty()) {
+                    if (!localReceivedAudio) {
+                        localReceivedAudio = true
+                        localNoDataTimeout?.let { timeoutHandler.removeCallbacks(it) }
+                    }
+                    callback.onAudioData(data)
+                }
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (currentSessionId != sessionId.get()) return
+                Log.e(TAG, "[流式] TTS WebSocket 失败 (session=$currentSessionId): ${t.message}", t)
+                localNoDataTimeout?.let { timeoutHandler.removeCallbacks(it) }
+                handleStreamingError("WebSocket失败: ${t.message ?: "未知"}", callback, retryCount, text, voice, currentSessionId)
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                Log.i(TAG, "[流式] TTS WebSocket 已关闭: $code $reason (session=$currentSessionId)")
+                localNoDataTimeout?.let { timeoutHandler.removeCallbacks(it) }
+                // 正常关闭时回调 onComplete（如果没有错误且收到过音频）
+                if (currentSessionId == sessionId.get() && !localShouldStop) {
+                    if (localReceivedAudio) {
+                        callback.onComplete()
+                    } else {
+                        callback.onError("未收到音频数据")
+                    }
+                }
+            }
+        }
+
+        localWebSocket = client.newWebSocket(request, listener)
+        // 不赋值给全局 webSocket，避免多句合成时互相覆盖
+    }
+
+    /**
+     * [Bug fix] 流式合成的错误处理（带重试）
+     */
+    private fun handleStreamingError(
+        error: String,
+        callback: Callback,
+        retryCount: Int,
+        text: String,
+        voice: String,
+        errorSessionId: Int
+    ) {
+        if (errorSessionId != sessionId.get()) {
+            Log.d(TAG, "[流式] 忽略旧会话错误 (session=$errorSessionId)")
+            return
+        }
+        if (retryCount < MAX_RETRIES) {
+            Log.w(TAG, "[流式] TTS 失败，${RETRY_DELAY_MS}ms 后重试 (${retryCount + 1}/$MAX_RETRIES)")
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                if (errorSessionId != sessionId.get()) return@postDelayed
+                synthesizeInternalStreaming(text, voice, callback, retryCount + 1)
+            }, RETRY_DELAY_MS)
+        } else {
+            Log.e(TAG, "[流式] TTS 重试${MAX_RETRIES}次后仍失败: $error")
+            callback.onError(error)
+        }
     }
 
     /**
