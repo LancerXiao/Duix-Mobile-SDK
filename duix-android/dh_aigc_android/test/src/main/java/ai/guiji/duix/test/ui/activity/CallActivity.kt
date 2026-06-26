@@ -59,9 +59,11 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
         // [P1] 从 1200ms 缩短到 900ms，更快触发 LLM 请求
         private const val STABLE_TEXT_TIMEOUT_MS = 900L
         // [Bug fix] SPEAKING 状态超时保护：如果 DUIX SDK 没有回调 AUDIO_PLAY_END，
-        // 4 秒后自动恢复到 IDLE，防止状态卡死
-        // [流式 TTS] 此超时在流式模式下按句重置，仅检测句间间隔
-        private const val SPEAKING_TIMEOUT_MS = 4000L
+        // 15 秒后自动恢复到 IDLE，防止状态卡死
+        // [根因修复] 原 4s 太短：TTS 首字延迟约 300-500ms + 网络抖动 + 长开场白（~10s 音频）
+        // 导致超时在音频播放中途触发 stopPush，破坏 AudioPlayer 状态，后续对话静音
+        // 15s 足够覆盖最长的单次说话场景，且 AUDIO_PLAY_START 会取消此超时
+        private const val SPEAKING_TIMEOUT_MS = 15000L
         // [Bug fix] THINKING 状态超时保护：如果 LLM 请求挂起无响应，
         // 12 秒后自动恢复到 IDLE，防止状态永远卡在 THINKING
         // [P1] 从 15s 缩短到 12s
@@ -276,7 +278,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
             // [流式 TTS] 清理流式状态和 TTS 引擎
             resetStreamingTtsState()
             stopAllTtsEngines()
+            // [Bug fix] 同时调用 stopPush 和 stopAudio 确保彻底停止
+            // stopPush 通知 PlaybackThread 结束，stopAudio 直接停止 AudioTrack
             try { duix?.stopPush() } catch (e: Exception) { Log.e(TAG, "SPEAKING超时 stopPush异常", e) }
+            try { duix?.stopAudio() } catch (e: Exception) { Log.e(TAG, "SPEAKING超时 stopAudio异常", e) }
             setState(State.IDLE)
             updateStatus("Ready")
             updateUI()
@@ -754,6 +759,10 @@ class CallActivity : BaseActivity(), TestHost, PipelineHealthMonitor.HealthHost 
                 Constant.CALLBACK_EVENT_AUDIO_PLAY_START -> {
                     runOnUiThread {
                         Log.i(TAG, "AUDIO_PLAY_START: 数字人开始播放音频")
+                        // [Bug fix] 音频已开始播放，取消 SPEAKING 超时
+                        // 避免长音频（如开场白）在播放中途被 4s 超时误杀
+                        // 超时只在"等待音频到达"阶段生效，播放开始后由 AUDIO_PLAY_END 接管
+                        cancelSpeakingTimeout()
                         // setState 会自动修正非法转换（如 IDLE→SPEAKING 自动插入 THINKING）
                         setState(State.SPEAKING)
                         updateUI()

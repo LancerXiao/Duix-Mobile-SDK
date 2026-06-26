@@ -65,16 +65,32 @@ public class AudioPlayer {
         mPlayQueue.clear();
         waitNextBuffer.clear();
         waitNextBuffer.position(0);
-        // [Bug fix] 每次 pushStart 时重新启动 AudioTrack 和 PlaybackThread
+        // [Bug fix] 每次 pushStart 时彻底重置 AudioTrack 和 PlaybackThread
         // 否则 stopPush() → pushDone() → PlaybackThread 退出后，
         // 后续 pushStart 无法恢复播放
         try {
             if (audioTrack != null) {
+                // 先停止并刷新，清除内部缓冲区的残留数据
                 audioTrack.stop();
+                audioTrack.flush();
+                // 重新进入播放状态
                 audioTrack.play();
             }
         } catch (Exception e) {
             Logger.e("pushStart: audioTrack.play() failed: " + e.getMessage());
+            // [Bug fix] 如果 AudioTrack 状态异常无法恢复，重建它
+            try {
+                if (audioTrack != null) {
+                    audioTrack.release();
+                }
+                audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC,
+                        sampleRate, channelConfig, audioFormat, bufferSize,
+                        AudioTrack.MODE_STREAM);
+                audioTrack.play();
+                Logger.i("pushStart: AudioTrack 已重建");
+            } catch (Exception e2) {
+                Logger.e("pushStart: AudioTrack 重建失败: " + e2.getMessage());
+            }
         }
         if (playbackThread != null) {
             playbackThread.stopPlay();
@@ -174,13 +190,18 @@ public class AudioPlayer {
                         stopPlay();
                         break;
                     } else {
-                        audioTrack.write(top.buffer, 0, top.size, AudioTrack.WRITE_BLOCKING);
+                        try {
+                            audioTrack.write(top.buffer, 0, top.size, AudioTrack.WRITE_BLOCKING);
+                        } catch (Exception e) {
+                            Logger.e("PlaybackThread write failed: " + e.getMessage());
+                        }
                     }
                 }
             }
-            if (audioTrack != null) {
-                audioTrack.stop();
-            }
+            // [Bug fix] 不在 PlaybackThread 退出时调用 audioTrack.stop()
+            // 因为 pushStart() 会统一管理 AudioTrack 状态（stop + flush + play）
+            // 如果这里 stop 了，可能与 pushStart 中的 play() 竞态
+            // 音频数据的播放由 pushStart 中的 flush 清理
             Logger.i("AudioPlayer play finish");
         }
     }
